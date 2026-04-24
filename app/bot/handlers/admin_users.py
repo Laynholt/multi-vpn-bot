@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import shlex
+from dataclasses import dataclass
+from datetime import date
+
 from aiogram import F, Router
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
@@ -27,9 +31,23 @@ from app.bot.keyboards import (
 from app.bot.menu_sections import MenuSection
 from app.bot.user_admin_actions import AdminUserAction
 from app.context import ApplicationContext
+from app.core.config.models import ProviderType
 from app.core.permissions import UserRole
+from app.services.traffic_stats import TrafficAdminDailySummary
 
 router = Router(name="admin-users")
+
+MAX_ADMIN_TRAFFIC_CSV_ROWS = 10_000
+
+
+@dataclass(frozen=True, slots=True)
+class AdminTrafficStatsQuery:
+    server_key: str | None = None
+    provider_type: ProviderType | None = None
+    telegram_user_id: int | None = None
+    vpn_client_id: int | None = None
+    date_from: date | None = None
+    date_to: date | None = None
 
 
 async def _ensure_admin(callback: CallbackQuery, user_role: UserRole) -> bool:
@@ -51,6 +69,67 @@ async def _send_traffic_csv(
     await callback.message.answer_document(
         BufferedInputFile(content, filename=filename),
         caption="CSV export: admin traffic stats",
+    )
+
+
+async def _send_message_traffic_csv(
+    *,
+    message: Message,
+    content: bytes,
+    filename: str,
+) -> None:
+    await message.answer_document(
+        BufferedInputFile(content, filename=filename),
+        caption="CSV export: admin traffic stats",
+    )
+
+
+def _normalize_optional(value: str) -> str | None:
+    return None if value.lower() in {"all", "-", "none"} else value
+
+
+def _parse_admin_traffic_stats_query(text: str) -> AdminTrafficStatsQuery:
+    parts = shlex.split(text)
+    values: dict[str, str] = {}
+    for part in parts[1:]:
+        if "=" not in part:
+            raise ValueError(
+                "Usage: /stats server=<key|all> provider=<wireguard|3xui|all> "
+                "user=<telegram_id|all> client=<vpn_client_id|all> "
+                "from=<YYYY-MM-DD|all> to=<YYYY-MM-DD|all>"
+            )
+        key, value = part.split("=", 1)
+        values[key] = value
+
+    server_key = _normalize_optional(values.get("server", "all"))
+    provider_value = _normalize_optional(values.get("provider", "all"))
+    user_value = _normalize_optional(values.get("user", "all"))
+    client_value = _normalize_optional(values.get("client", "all"))
+    from_value = _normalize_optional(values.get("from", "all"))
+    to_value = _normalize_optional(values.get("to", "all"))
+
+    return AdminTrafficStatsQuery(
+        server_key=server_key,
+        provider_type=ProviderType(provider_value) if provider_value is not None else None,
+        telegram_user_id=int(user_value) if user_value is not None else None,
+        vpn_client_id=int(client_value) if client_value is not None else None,
+        date_from=date.fromisoformat(from_value) if from_value is not None else None,
+        date_to=date.fromisoformat(to_value) if to_value is not None else None,
+    )
+
+
+async def _load_admin_traffic_summary(
+    *,
+    app_context: ApplicationContext,
+    query: AdminTrafficStatsQuery,
+) -> TrafficAdminDailySummary:
+    return await app_context.traffic_stats_service.summarize_daily_stats_for_admin(
+        server_key=query.server_key,
+        provider_type=query.provider_type,
+        telegram_user_id=query.telegram_user_id,
+        vpn_client_id=query.vpn_client_id,
+        date_from=query.date_from,
+        date_to=query.date_to,
     )
 
 
@@ -84,13 +163,15 @@ async def open_admin_traffic_stats(
         return
 
     server_key = None if callback_data.server == "all" else callback_data.server
-    summary = await app_context.traffic_stats_service.summarize_daily_stats_for_admin(
-        server_key=server_key,
+    summary = await _load_admin_traffic_summary(
+        app_context=app_context,
+        query=AdminTrafficStatsQuery(server_key=server_key),
     )
     if callback_data.action == AdminTrafficStatsAction.CSV:
         content = app_context.traffic_stats_service.export_admin_daily_csv(
             summary,
             delimiter=app_context.config.statistics.csv_delimiter,
+            max_rows=MAX_ADMIN_TRAFFIC_CSV_ROWS,
         )
         await _send_traffic_csv(
             callback=callback,
@@ -107,6 +188,53 @@ async def open_admin_traffic_stats(
             server_key=server_key,
         ),
     )
+
+
+@router.message(F.text.startswith("/stats_csv"))
+async def open_admin_traffic_stats_csv_command(
+    message: Message,
+    app_context: ApplicationContext,
+    user_role: UserRole,
+) -> None:
+    if user_role != UserRole.ADMIN:
+        return
+
+    try:
+        query = _parse_admin_traffic_stats_query(message.text or "")
+        summary = await _load_admin_traffic_summary(app_context=app_context, query=query)
+        content = app_context.traffic_stats_service.export_admin_daily_csv(
+            summary,
+            delimiter=app_context.config.statistics.csv_delimiter,
+            max_rows=MAX_ADMIN_TRAFFIC_CSV_ROWS,
+        )
+    except Exception as exc:
+        await send_or_edit_text(event=message, text=f"Не удалось построить CSV: {exc}")
+        return
+
+    await _send_message_traffic_csv(
+        message=message,
+        content=content,
+        filename=f"traffic_stats_{query.server_key or 'all'}.csv",
+    )
+
+
+@router.message(F.text.startswith("/stats"))
+async def open_admin_traffic_stats_command(
+    message: Message,
+    app_context: ApplicationContext,
+    user_role: UserRole,
+) -> None:
+    if user_role != UserRole.ADMIN:
+        return
+
+    try:
+        query = _parse_admin_traffic_stats_query(message.text or "")
+        summary = await _load_admin_traffic_summary(app_context=app_context, query=query)
+        text = render_admin_traffic_summary(summary)
+    except Exception as exc:
+        text = f"Не удалось построить статистику: {exc}"
+
+    await send_or_edit_text(event=message, text=text)
 
 
 @router.callback_query(AdminUsersPageCallback.filter())

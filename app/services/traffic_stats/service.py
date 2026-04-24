@@ -366,6 +366,7 @@ class TrafficStatsService:
         server_key: str | None = None,
         provider_type: ProviderType | None = None,
         telegram_user_id: int | None = None,
+        vpn_client_id: int | None = None,
         date_from: date | None = None,
         date_to: date | None = None,
     ) -> TrafficAdminDailySummary:
@@ -377,13 +378,45 @@ class TrafficStatsService:
 
             client_repository = VpnClientRepository(session)
             daily_repository = TrafficStatDailyRepository(session)
-            rows = await daily_repository.list_daily(
-                server_key=server_key,
-                provider_type=provider_type.value if provider_type is not None else None,
-                telegram_user_id=telegram_user_id,
-                date_from=date_from,
-                date_to=date_to,
-            )
+            if vpn_client_id is None:
+                rows = await daily_repository.list_daily(
+                    server_key=server_key,
+                    provider_type=provider_type.value if provider_type is not None else None,
+                    telegram_user_id=telegram_user_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+            else:
+                client = await client_repository.get_by_id(vpn_client_id)
+                if (
+                    client is None
+                    or (server_key is not None and client.server_key != server_key)
+                    or (
+                        provider_type is not None
+                        and client.provider_type != provider_type.value
+                    )
+                ):
+                    return TrafficAdminDailySummary(
+                        date_from=date_from,
+                        date_to=date_to,
+                        server_key=server_key,
+                        provider_type=provider_type,
+                        clients=(),
+                        rx_bytes=0,
+                        tx_bytes=0,
+                        total_bytes=0,
+                    )
+                rows = await daily_repository.list_by_identity(
+                    server_key=client.server_key,
+                    provider_type=client.provider_type,
+                    provider_client_id=client.provider_client_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+                if telegram_user_id is not None:
+                    rows = [
+                        row for row in rows if row.telegram_user_id == telegram_user_id
+                    ]
 
             grouped: dict[tuple[str, str, str], list[TrafficStatDailyORM]] = defaultdict(list)
             for row in rows:
@@ -442,7 +475,13 @@ class TrafficStatsService:
         summary: TrafficAdminDailySummary,
         *,
         delimiter: str,
+        max_rows: int | None = None,
     ) -> bytes:
+        if max_rows is not None and len(summary.clients) > max_rows:
+            raise ValueError(
+                f"CSV export is too large: {len(summary.clients)} rows, max {max_rows}"
+            )
+
         output = StringIO(newline="")
         writer = csv.writer(output, delimiter=delimiter)
         writer.writerow(

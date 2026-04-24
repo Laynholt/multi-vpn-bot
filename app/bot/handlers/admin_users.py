@@ -3,13 +3,24 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
-from app.bot.callbacks import AdminUserManageCallback, AdminUsersPageCallback, MenuActionCallback
-from app.bot.formatters import render_admin_user_card, render_admin_users_page
+from app.bot.callbacks import (
+    AdminTrafficStatsAction,
+    AdminTrafficStatsCallback,
+    AdminUserManageCallback,
+    AdminUsersPageCallback,
+    MenuActionCallback,
+)
+from app.bot.formatters import (
+    render_admin_traffic_summary,
+    render_admin_user_card,
+    render_admin_users_page,
+)
 from app.bot.handlers.common import send_or_edit_text
 from app.bot.keyboards import (
     build_admin_section_keyboard,
+    build_admin_traffic_keyboard,
     build_admin_user_card_keyboard,
     build_admin_users_page_keyboard,
 )
@@ -28,6 +39,21 @@ async def _ensure_admin(callback: CallbackQuery, user_role: UserRole) -> bool:
     return False
 
 
+async def _send_traffic_csv(
+    *,
+    callback: CallbackQuery,
+    content: bytes,
+    filename: str,
+) -> None:
+    if not isinstance(callback.message, Message):
+        await callback.answer("Не удалось отправить CSV.", show_alert=True)
+        return
+    await callback.message.answer_document(
+        BufferedInputFile(content, filename=filename),
+        caption="CSV export: admin traffic stats",
+    )
+
+
 @router.callback_query(MenuActionCallback.filter(F.section == MenuSection.ADMIN))
 async def admin_home(
     callback: CallbackQuery,
@@ -44,6 +70,42 @@ async def admin_home(
             "Выберите раздел для продолжения."
         ),
         reply_markup=build_admin_section_keyboard(),
+    )
+
+
+@router.callback_query(AdminTrafficStatsCallback.filter())
+async def open_admin_traffic_stats(
+    callback: CallbackQuery,
+    callback_data: AdminTrafficStatsCallback,
+    app_context: ApplicationContext,
+    user_role: UserRole,
+) -> None:
+    if not await _ensure_admin(callback, user_role):
+        return
+
+    server_key = None if callback_data.server == "all" else callback_data.server
+    summary = await app_context.traffic_stats_service.summarize_daily_stats_for_admin(
+        server_key=server_key,
+    )
+    if callback_data.action == AdminTrafficStatsAction.CSV:
+        content = app_context.traffic_stats_service.export_admin_daily_csv(
+            summary,
+            delimiter=app_context.config.statistics.csv_delimiter,
+        )
+        await _send_traffic_csv(
+            callback=callback,
+            content=content,
+            filename=f"traffic_stats_{server_key or 'all'}.csv",
+        )
+        return
+
+    await send_or_edit_text(
+        event=callback,
+        text=render_admin_traffic_summary(summary),
+        reply_markup=build_admin_traffic_keyboard(
+            registry=app_context.server_registry,
+            server_key=server_key,
+        ),
     )
 
 

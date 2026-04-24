@@ -1,6 +1,10 @@
 """Text formatters for Telegram responses."""
 
-from app.bot.formatters.admin_users import render_admin_user_card, render_admin_users_page
+from app.bot.formatters.admin_users import (
+    render_admin_traffic_summary,
+    render_admin_user_card,
+    render_admin_users_page,
+)
 from app.bot.formatters.menu import (
     render_config_request_admin_text,
     render_config_request_prompt,
@@ -29,6 +33,7 @@ from app.bot.formatters.servers import (
 __all__ = [
     "render_admin_user_card",
     "render_admin_users_page",
+    "render_admin_traffic_summary",
     "render_config_request_admin_text",
     "render_config_request_prompt",
     "render_config_request_submitted",

@@ -224,6 +224,35 @@ class TrafficStatDailyRepository:
         result = await self._session.execute(query)
         return list(result.scalars().all())
 
+    async def list_daily(
+        self,
+        *,
+        server_key: str | None = None,
+        provider_type: str | None = None,
+        telegram_user_id: int | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> list[TrafficStatDailyORM]:
+        query = select(TrafficStatDailyORM).order_by(
+            TrafficStatDailyORM.server_key,
+            TrafficStatDailyORM.provider_type,
+            TrafficStatDailyORM.provider_client_id,
+            TrafficStatDailyORM.stat_date,
+        )
+        if server_key is not None:
+            query = query.where(TrafficStatDailyORM.server_key == server_key)
+        if provider_type is not None:
+            query = query.where(TrafficStatDailyORM.provider_type == provider_type)
+        if telegram_user_id is not None:
+            query = query.where(TrafficStatDailyORM.telegram_user_id == telegram_user_id)
+        if date_from is not None:
+            query = query.where(TrafficStatDailyORM.stat_date >= date_from)
+        if date_to is not None:
+            query = query.where(TrafficStatDailyORM.stat_date <= date_to)
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())
+
     async def delete_for_date(self, stat_date: date) -> None:
         await self._session.execute(
             delete(TrafficStatDailyORM).where(TrafficStatDailyORM.stat_date == stat_date)

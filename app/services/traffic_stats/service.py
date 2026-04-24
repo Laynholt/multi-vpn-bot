@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import csv
+from collections import defaultdict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, time, timedelta
 from enum import StrEnum
+from io import StringIO
 from typing import TYPE_CHECKING, Any
 from zoneinfo import ZoneInfo
 
@@ -100,6 +103,35 @@ class TrafficUserDailySummary:
     date_from: date | None
     date_to: date | None
     clients: tuple[TrafficUserClientDailySummary, ...]
+    rx_bytes: int
+    tx_bytes: int
+    total_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class TrafficAdminClientDailySummary:
+    """Aggregated daily traffic for one client in an admin report."""
+
+    vpn_client_id: int | None
+    server_key: str
+    provider_type: ProviderType
+    provider_client_id: str
+    display_name: str
+    telegram_user_id: int | None
+    rx_bytes: int
+    tx_bytes: int
+    total_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class TrafficAdminDailySummary:
+    """Aggregated daily traffic for admin reporting."""
+
+    date_from: date | None
+    date_to: date | None
+    server_key: str | None
+    provider_type: ProviderType | None
+    clients: tuple[TrafficAdminClientDailySummary, ...]
     rx_bytes: int
     tx_bytes: int
     total_bytes: int
@@ -327,6 +359,118 @@ class TrafficStatsService:
                 tx_bytes=tx_bytes,
                 total_bytes=rx_bytes + tx_bytes,
             )
+
+    async def summarize_daily_stats_for_admin(
+        self,
+        *,
+        server_key: str | None = None,
+        provider_type: ProviderType | None = None,
+        telegram_user_id: int | None = None,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> TrafficAdminDailySummary:
+        async with self._database.session() as session:
+            from app.infrastructure.db.repositories import (
+                TrafficStatDailyRepository,
+                VpnClientRepository,
+            )
+
+            client_repository = VpnClientRepository(session)
+            daily_repository = TrafficStatDailyRepository(session)
+            rows = await daily_repository.list_daily(
+                server_key=server_key,
+                provider_type=provider_type.value if provider_type is not None else None,
+                telegram_user_id=telegram_user_id,
+                date_from=date_from,
+                date_to=date_to,
+            )
+
+            grouped: dict[tuple[str, str, str], list[TrafficStatDailyORM]] = defaultdict(list)
+            for row in rows:
+                grouped[(row.server_key, row.provider_type, row.provider_client_id)].append(row)
+
+            summaries: list[TrafficAdminClientDailySummary] = []
+            for (row_server_key, row_provider_type, provider_client_id), items in grouped.items():
+                client = await client_repository.get_by_identity(
+                    server_key=row_server_key,
+                    provider_type=row_provider_type,
+                    provider_client_id=provider_client_id,
+                )
+                rx_bytes = sum(item.rx_bytes for item in items)
+                tx_bytes = sum(item.tx_bytes for item in items)
+                summaries.append(
+                    TrafficAdminClientDailySummary(
+                        vpn_client_id=client.id if client is not None else None,
+                        server_key=row_server_key,
+                        provider_type=ProviderType(row_provider_type),
+                        provider_client_id=provider_client_id,
+                        display_name=(
+                            client.display_name if client is not None else provider_client_id
+                        ),
+                        telegram_user_id=items[-1].telegram_user_id,
+                        rx_bytes=rx_bytes,
+                        tx_bytes=tx_bytes,
+                        total_bytes=rx_bytes + tx_bytes,
+                    )
+                )
+
+            rx_bytes = sum(item.rx_bytes for item in summaries)
+            tx_bytes = sum(item.tx_bytes for item in summaries)
+            return TrafficAdminDailySummary(
+                date_from=date_from,
+                date_to=date_to,
+                server_key=server_key,
+                provider_type=provider_type,
+                clients=tuple(
+                    sorted(
+                        summaries,
+                        key=lambda item: (
+                            item.server_key,
+                            item.provider_type.value,
+                            item.display_name,
+                            item.provider_client_id,
+                        ),
+                    )
+                ),
+                rx_bytes=rx_bytes,
+                tx_bytes=tx_bytes,
+                total_bytes=rx_bytes + tx_bytes,
+            )
+
+    def export_admin_daily_csv(
+        self,
+        summary: TrafficAdminDailySummary,
+        *,
+        delimiter: str,
+    ) -> bytes:
+        output = StringIO(newline="")
+        writer = csv.writer(output, delimiter=delimiter)
+        writer.writerow(
+            [
+                "server_key",
+                "provider_type",
+                "provider_client_id",
+                "display_name",
+                "telegram_user_id",
+                "rx_bytes",
+                "tx_bytes",
+                "total_bytes",
+            ]
+        )
+        for client in summary.clients:
+            writer.writerow(
+                [
+                    client.server_key,
+                    client.provider_type.value,
+                    client.provider_client_id,
+                    client.display_name,
+                    client.telegram_user_id or "",
+                    client.rx_bytes,
+                    client.tx_bytes,
+                    client.total_bytes,
+                ]
+            )
+        return output.getvalue().encode("utf-8")
 
     async def rebuild_daily_rollup(self, stat_date: date) -> list[TrafficDailySnapshot]:
         """Rebuild a single local-date daily aggregate from stored raw samples."""

@@ -2,6 +2,7 @@
 
 from app.bot.keyboards.admin_users import (
     build_admin_section_keyboard,
+    build_admin_traffic_keyboard,
     build_admin_user_card_keyboard,
     build_admin_users_page_keyboard,
 )
@@ -18,6 +19,7 @@ from app.bot.keyboards.servers import (
 
 __all__ = [
     "build_admin_section_keyboard",
+    "build_admin_traffic_keyboard",
     "build_admin_user_card_keyboard",
     "build_admin_users_page_keyboard",
     "build_back_home_keyboard",

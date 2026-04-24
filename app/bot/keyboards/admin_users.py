@@ -5,9 +5,16 @@ from __future__ import annotations
 from aiogram.types import InlineKeyboardMarkup
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.bot.callbacks import AdminUserManageCallback, AdminUsersPageCallback, MenuActionCallback
+from app.bot.callbacks import (
+    AdminTrafficStatsAction,
+    AdminTrafficStatsCallback,
+    AdminUserManageCallback,
+    AdminUsersPageCallback,
+    MenuActionCallback,
+)
 from app.bot.menu_sections import MenuSection
 from app.bot.user_admin_actions import AdminUserAction
+from app.core.registry import ServerRegistry
 from app.services.users import TelegramUserPage, TelegramUserSnapshot
 
 
@@ -16,6 +23,58 @@ def build_admin_section_keyboard() -> InlineKeyboardMarkup:
     builder.button(
         text="Пользователи",
         callback_data=AdminUsersPageCallback(page=0).pack(),
+    )
+    builder.button(
+        text="Статистика",
+        callback_data=AdminTrafficStatsCallback(
+            action=AdminTrafficStatsAction.REPORT,
+            server="all",
+        ).pack(),
+    )
+    builder.button(
+        text="Домой",
+        callback_data=MenuActionCallback(section=MenuSection.HOME).pack(),
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def build_admin_traffic_keyboard(
+    *,
+    registry: ServerRegistry,
+    server_key: str | None,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    selected_server = server_key or "all"
+    builder.button(
+        text="CSV",
+        callback_data=AdminTrafficStatsCallback(
+            action=AdminTrafficStatsAction.CSV,
+            server=selected_server,
+        ).pack(),
+    )
+    if server_key is not None:
+        builder.button(
+            text="Все серверы",
+            callback_data=AdminTrafficStatsCallback(
+                action=AdminTrafficStatsAction.REPORT,
+                server="all",
+            ).pack(),
+        )
+    for server in registry.list_servers():
+        if server.key == server_key:
+            continue
+        icon = f"{server.icon} " if server.icon else ""
+        builder.button(
+            text=f"{icon}{server.title}",
+            callback_data=AdminTrafficStatsCallback(
+                action=AdminTrafficStatsAction.REPORT,
+                server=server.key,
+            ).pack(),
+        )
+    builder.button(
+        text="Назад",
+        callback_data=MenuActionCallback(section=MenuSection.ADMIN).pack(),
     )
     builder.button(
         text="Домой",

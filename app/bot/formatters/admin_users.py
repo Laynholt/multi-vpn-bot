@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from html import escape
 
+from app.services.traffic_stats import TrafficAdminDailySummary
 from app.services.users import TelegramUserPage, TelegramUserSnapshot
 
 
@@ -55,3 +56,44 @@ def render_admin_user_card(user: TelegramUserSnapshot) -> str:
             f"Последняя активность: {_format_dt(user.last_seen_at)}",
         ]
     )
+
+
+def _format_bytes(value: int) -> str:
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    amount = float(value)
+    for unit in units:
+        if abs(amount) < 1024 or unit == units[-1]:
+            return f"{amount:.1f} {unit}" if unit != "B" else f"{int(amount)} B"
+        amount /= 1024
+    return f"{value} B"
+
+
+def render_admin_traffic_summary(summary: TrafficAdminDailySummary) -> str:
+    scope = summary.server_key or "all servers"
+    period = "all time"
+    if summary.date_from is not None or summary.date_to is not None:
+        period = f"{summary.date_from or '...'} - {summary.date_to or '...'}"
+
+    lines = [
+        "Админская статистика",
+        "",
+        f"Scope: {escape(scope)}",
+        f"Period: {period}",
+        f"Traffic total: {_format_bytes(summary.total_bytes)}",
+        f"RX: {_format_bytes(summary.rx_bytes)}",
+        f"TX: {_format_bytes(summary.tx_bytes)}",
+    ]
+    if not summary.clients:
+        lines.extend(["", "Данных по трафику пока нет."])
+        return "\n".join(lines)
+
+    lines.extend(["", "Клиенты:"])
+    for client in summary.clients:
+        user = client.telegram_user_id if client.telegram_user_id is not None else "none"
+        lines.append(
+            f"- {escape(client.display_name)} "
+            f"(<code>{escape(client.server_key)}</code>, "
+            f"<code>{escape(client.provider_type.value)}</code>, "
+            f"user: {user}): {_format_bytes(client.total_bytes)}"
+        )
+    return "\n".join(lines)

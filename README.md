@@ -28,6 +28,8 @@
   привязанным VPN-клиентам.
 - добавлен сценарий `Запросить конфиг`: inline-кнопка, FSM для комментария
   и отправка заявки администраторам без попадания сообщения в обычный relay.
+- этап 17 начат: добавлена админская статистика по всем серверам или выбранному
+  серверу, текстовая сводка и CSV export через Telegram.
 
 ## Быстрый старт
 
@@ -62,7 +64,7 @@ python -m app.main --config configs/config.json
 - `app/services/provider_clients`: синхронизация provider actions с client inventory;
 - `app/services/config_delivery`: выдача привязанных пользовательских VPN-конфигов;
 - `app/services/traffic_stats`: нормализация статистики, raw samples,
-  delta calculation, дневные агрегаты и пользовательская сводка трафика;
+  delta calculation, дневные агрегаты, пользовательская и админская сводка трафика;
 - `app/providers`: базовый provider contract, capabilities, factory, registry
   и первый WireGuard provider slice;
 - `app/bot`: aiogram runtime, inline navigation, admin user management,
@@ -75,5 +77,6 @@ python -m app.main --config configs/config.json
 
 ## Следующий шаг
 
-Следующий логичный блок — админская статистика: фильтры по периоду/серверу,
-агрегация для админского UI и CSV export поверх уже собранного traffic layer.
+Следующий логичный блок — расширить админские статистические запросы:
+фильтры по периоду, пользователю, клиенту и провайдеру, плюс ограничения
+для очень больших CSV-выборок.

@@ -221,3 +221,67 @@ async def test_disabled_raw_storage_still_updates_daily_rollup(
     assert raw == []
     assert daily[0].rx_bytes == 10
     assert daily[0].tx_bytes == 30
+
+
+@pytest.mark.asyncio
+async def test_summarize_daily_stats_for_user_aggregates_linked_clients(
+    database: DatabaseManager,
+) -> None:
+    first_client_id = await _create_linked_client(database)
+    inventory = ClientInventoryService(database)
+    other_clients = await inventory.sync_provider_clients(
+        server_key="vps-de",
+        provider_type=ProviderType.WIREGUARD,
+        clients=[VpnClientSyncItem(provider_client_id="peer-2", display_name="Bob")],
+    )
+    await inventory.link_client_to_user(
+        vpn_client_id=other_clients[0].id,
+        telegram_user_id=1001,
+    )
+    service = TrafficStatsService(database, daily_rollup_timezone="Europe/Moscow")
+
+    await service.record_provider_samples(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        samples=[
+            TrafficStatSyncItem(
+                provider_client_id="peer-1",
+                counter_mode=TrafficCounterMode.CURRENT,
+                rx_bytes_delta=100,
+                tx_bytes_delta=200,
+                captured_at=datetime(2026, 4, 24, 10, 0, tzinfo=UTC),
+            )
+        ],
+    )
+    await service.record_provider_samples(
+        server_key="vps-de",
+        provider_type=ProviderType.WIREGUARD,
+        samples=[
+            TrafficStatSyncItem(
+                provider_client_id="peer-2",
+                counter_mode=TrafficCounterMode.CURRENT,
+                rx_bytes_delta=50,
+                tx_bytes_delta=75,
+                captured_at=datetime(2026, 4, 24, 11, 0, tzinfo=UTC),
+            )
+        ],
+    )
+
+    summary = await service.summarize_daily_stats_for_user(
+        telegram_user_id=1001,
+        date_from=date(2026, 4, 24),
+        date_to=date(2026, 4, 24),
+    )
+
+    assert summary.telegram_user_id == 1001
+    assert summary.rx_bytes == 150
+    assert summary.tx_bytes == 275
+    assert summary.total_bytes == 425
+    assert [(client.display_name, client.total_bytes) for client in summary.clients] == [
+        ("Alice", 300),
+        ("Bob", 125),
+    ]
+    assert {client.vpn_client_id for client in summary.clients} == {
+        first_client_id,
+        other_clients[0].id,
+    }

@@ -78,6 +78,33 @@ class TrafficDailySnapshot:
     updated_at: datetime
 
 
+@dataclass(frozen=True, slots=True)
+class TrafficUserClientDailySummary:
+    """Aggregated daily traffic for one client linked to a Telegram user."""
+
+    vpn_client_id: int
+    server_key: str
+    provider_type: ProviderType
+    provider_client_id: str
+    display_name: str
+    rx_bytes: int
+    tx_bytes: int
+    total_bytes: int
+
+
+@dataclass(frozen=True, slots=True)
+class TrafficUserDailySummary:
+    """Aggregated daily traffic for all clients linked to a Telegram user."""
+
+    telegram_user_id: int
+    date_from: date | None
+    date_to: date | None
+    clients: tuple[TrafficUserClientDailySummary, ...]
+    rx_bytes: int
+    tx_bytes: int
+    total_bytes: int
+
+
 class TrafficStatsService:
     """Coordinates raw traffic samples, delta calculation and daily aggregates."""
 
@@ -240,6 +267,66 @@ class TrafficStatsService:
                 date_to=date_to,
             )
             return [self._to_daily_snapshot(row) for row in rows]
+
+    async def summarize_daily_stats_for_user(
+        self,
+        *,
+        telegram_user_id: int,
+        date_from: date | None = None,
+        date_to: date | None = None,
+    ) -> TrafficUserDailySummary:
+        async with self._database.session() as session:
+            from app.infrastructure.db.repositories import (
+                TrafficStatDailyRepository,
+                VpnClientRepository,
+            )
+
+            client_repository = VpnClientRepository(session)
+            daily_repository = TrafficStatDailyRepository(session)
+            clients = await client_repository.list_by_telegram_user(
+                telegram_user_id=telegram_user_id,
+            )
+
+            summaries: list[TrafficUserClientDailySummary] = []
+            for client in clients:
+                rows = await daily_repository.list_by_identity(
+                    server_key=client.server_key,
+                    provider_type=client.provider_type,
+                    provider_client_id=client.provider_client_id,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+                rx_bytes = sum(row.rx_bytes for row in rows)
+                tx_bytes = sum(row.tx_bytes for row in rows)
+                summaries.append(
+                    TrafficUserClientDailySummary(
+                        vpn_client_id=client.id,
+                        server_key=client.server_key,
+                        provider_type=ProviderType(client.provider_type),
+                        provider_client_id=client.provider_client_id,
+                        display_name=client.display_name,
+                        rx_bytes=rx_bytes,
+                        tx_bytes=tx_bytes,
+                        total_bytes=rx_bytes + tx_bytes,
+                    )
+                )
+
+            rx_bytes = sum(item.rx_bytes for item in summaries)
+            tx_bytes = sum(item.tx_bytes for item in summaries)
+            return TrafficUserDailySummary(
+                telegram_user_id=telegram_user_id,
+                date_from=date_from,
+                date_to=date_to,
+                clients=tuple(
+                    sorted(
+                        summaries,
+                        key=lambda item: (item.display_name, item.server_key),
+                    )
+                ),
+                rx_bytes=rx_bytes,
+                tx_bytes=tx_bytes,
+                total_bytes=rx_bytes + tx_bytes,
+            )
 
     async def rebuild_daily_rollup(self, stat_date: date) -> list[TrafficDailySnapshot]:
         """Rebuild a single local-date daily aggregate from stored raw samples."""

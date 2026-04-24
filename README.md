@@ -24,6 +24,8 @@
   привязанных provider configs как Telegram-файлов;
 - добавлены provider base layer, unified client inventory и traffic statistics layer
   с raw samples, delta calculation и daily aggregates.
+- добавлена пользовательская кнопка `Моя статистика` с daily traffic summary по всем
+  привязанным VPN-клиентам.
 
 ## Быстрый старт
 
@@ -58,7 +60,7 @@ python -m app.main --config configs/config.json
 - `app/services/provider_clients`: синхронизация provider actions с client inventory;
 - `app/services/config_delivery`: выдача привязанных пользовательских VPN-конфигов;
 - `app/services/traffic_stats`: нормализация статистики, raw samples,
-  delta calculation и дневные агрегаты;
+  delta calculation, дневные агрегаты и пользовательская сводка трафика;
 - `app/providers`: базовый provider contract, capabilities, factory, registry
   и первый WireGuard provider slice;
 - `app/bot`: aiogram runtime, inline navigation, admin user management,
@@ -71,5 +73,5 @@ python -m app.main --config configs/config.json
 
 ## Следующий шаг
 
-Следующий логичный блок — пользовательская статистика: агрегировать daily traffic
-по всем привязанным VPN-клиентам пользователя и показать её из inline-меню.
+Следующий логичный блок — сценарий `Запросить конфиг`: inline-кнопка, FSM для
+комментария и пересылка заявки администраторам.

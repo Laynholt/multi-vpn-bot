@@ -7,6 +7,8 @@ from app.services.traffic_stats.service import (
     TrafficStatSnapshot,
     TrafficStatsService,
     TrafficStatSyncItem,
+    TrafficUserClientDailySummary,
+    TrafficUserDailySummary,
 )
 
 __all__ = [
@@ -16,4 +18,6 @@ __all__ = [
     "TrafficStatsService",
     "TrafficStatSnapshot",
     "TrafficStatSyncItem",
+    "TrafficUserClientDailySummary",
+    "TrafficUserDailySummary",
 ]

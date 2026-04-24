@@ -77,6 +77,7 @@ async def bootstrap(
         from app.services.host_actions import HostActionRegistry, HostActionsService
         from app.services.messages import MessageBridgeService
         from app.services.provider_clients import ProviderClientSyncService
+        from app.services.traffic_stats import TrafficStatsService
         from app.services.users import TelegramUserService
 
         access_service = AccessService(config.telegram)
@@ -101,6 +102,10 @@ async def bootstrap(
             provider_factory=provider_factory,
             client_inventory_service=client_inventory_service,
         )
+        traffic_stats_service = TrafficStatsService.from_config(
+            database,
+            config.statistics,
+        )
         telegram_user_service = TelegramUserService(database)
         message_bridge_service = MessageBridgeService(
             database=database,
@@ -116,6 +121,7 @@ async def bootstrap(
             host_actions_service=host_actions_service,
             provider_client_sync_service=provider_client_sync_service,
             config_delivery_service=config_delivery_service,
+            traffic_stats_service=traffic_stats_service,
             access_service=access_service,
             telegram_user_service=telegram_user_service,
             message_bridge_service=message_bridge_service,

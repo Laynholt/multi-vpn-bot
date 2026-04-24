@@ -17,6 +17,7 @@ if TYPE_CHECKING:
     from app.services.host_actions import HostActionsService
     from app.services.messages import MessageBridgeService
     from app.services.provider_clients import ProviderClientSyncService
+    from app.services.traffic_stats import TrafficStatsService
     from app.services.users import TelegramUserService
 
 
@@ -32,6 +33,7 @@ class ApplicationContext:
     host_actions_service: HostActionsService
     provider_client_sync_service: ProviderClientSyncService
     config_delivery_service: ConfigDeliveryService
+    traffic_stats_service: TrafficStatsService
     access_service: AccessService
     telegram_user_service: TelegramUserService
     message_bridge_service: MessageBridgeService

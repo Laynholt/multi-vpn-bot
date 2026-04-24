@@ -5,6 +5,7 @@ from app.bot.formatters.menu import (
     render_home_text,
     render_section_text,
     render_user_configs_result,
+    render_user_stats_summary,
 )
 from app.bot.formatters.servers import (
     render_host_action_error,
@@ -41,4 +42,5 @@ __all__ = [
     "render_server_system_text",
     "render_section_text",
     "render_user_configs_result",
+    "render_user_stats_summary",
 ]

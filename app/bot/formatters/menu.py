@@ -8,6 +8,7 @@ from app.bot.menu_sections import MenuSection
 from app.core.permissions import UserRole
 from app.core.registry import ServerRegistry
 from app.services.config_delivery import ConfigDeliveryResult
+from app.services.traffic_stats import TrafficUserDailySummary
 
 
 def render_home_text(*, role: UserRole, registry: ServerRegistry) -> str:
@@ -130,4 +131,42 @@ def render_user_configs_result(result: ConfigDeliveryResult) -> str:
                 f"- {escape(error.display_name)} "
                 f"(<code>{escape(error.server_key)}</code>): {escape(error.message)}"
             )
+    return "\n".join(lines)
+
+
+def _format_bytes(value: int) -> str:
+    units = ("B", "KiB", "MiB", "GiB", "TiB")
+    amount = float(value)
+    for unit in units:
+        if abs(amount) < 1024 or unit == units[-1]:
+            return f"{amount:.1f} {unit}" if unit != "B" else f"{int(amount)} B"
+        amount /= 1024
+    return f"{value} B"
+
+
+def render_user_stats_summary(summary: TrafficUserDailySummary) -> str:
+    if not summary.clients:
+        return "\n".join(
+            [
+                "Моя статистика",
+                "",
+                "Привязанные VPN-клиенты не найдены.",
+            ]
+        )
+
+    lines = [
+        "Моя статистика",
+        "",
+        f"Traffic total: {_format_bytes(summary.total_bytes)}",
+        f"RX: {_format_bytes(summary.rx_bytes)}",
+        f"TX: {_format_bytes(summary.tx_bytes)}",
+        "",
+        "Клиенты:",
+    ]
+    for client in summary.clients:
+        lines.append(
+            f"- {escape(client.display_name)} "
+            f"(<code>{escape(client.server_key)}</code>): "
+            f"{_format_bytes(client.total_bytes)}"
+        )
     return "\n".join(lines)

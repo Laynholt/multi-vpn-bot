@@ -6,7 +6,11 @@ from aiogram import F, Router
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from app.bot.callbacks import MenuActionCallback, MenuSection
-from app.bot.formatters import render_section_text, render_user_configs_result
+from app.bot.formatters import (
+    render_section_text,
+    render_user_configs_result,
+    render_user_stats_summary,
+)
 from app.bot.handlers.common import send_or_edit_text
 from app.bot.keyboards import build_back_home_keyboard
 from app.context import ApplicationContext
@@ -88,3 +92,20 @@ async def open_my_configs_section(
         reply_markup=build_back_home_keyboard(),
     )
     await _send_config_files(callback=callback, config_files=result.files)
+
+
+@router.callback_query(MenuActionCallback.filter(F.section == MenuSection.MY_STATS))
+async def open_my_stats_section(
+    callback: CallbackQuery,
+    app_context: ApplicationContext,
+    user_role: UserRole,
+    telegram_user: TelegramUserSnapshot,
+) -> None:
+    summary = await app_context.traffic_stats_service.summarize_daily_stats_for_user(
+        telegram_user_id=telegram_user.telegram_user_id,
+    )
+    await send_or_edit_text(
+        event=callback,
+        text=render_user_stats_summary(summary),
+        reply_markup=build_back_home_keyboard(),
+    )

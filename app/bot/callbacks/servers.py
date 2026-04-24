@@ -30,6 +30,7 @@ class HostActionCallback(CallbackData, prefix="hact"):
 
 
 class ProviderClientAction(StrEnum):
+    CREATE = "new"
     LIST = "list"
     SYNC = "sync"
 

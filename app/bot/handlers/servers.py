@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from aiogram import F, Router
-from aiogram.types import CallbackQuery
+from aiogram.types import CallbackQuery, Message
 
 from app.bot.callbacks import (
     HostActionCallback,
@@ -20,6 +20,8 @@ from app.bot.callbacks import (
 from app.bot.formatters import (
     render_host_action_error,
     render_host_action_result,
+    render_provider_client_create_help,
+    render_provider_client_create_result,
     render_provider_client_delete_confirmation,
     render_provider_client_delete_result,
     render_provider_client_sync_result,
@@ -41,9 +43,29 @@ from app.bot.keyboards import (
     build_server_system_keyboard,
 )
 from app.context import ApplicationContext
+from app.core.config.models import ProviderType
 from app.core.permissions import UserRole
 
 router = Router(name="servers")
+
+
+def _parse_wg_create_command(text: str) -> tuple[str, ProviderType, str, str, str | None]:
+    parts = text.split()
+    if len(parts) < 5:
+        raise ValueError(
+            "Usage: /wg_create <server_key> <provider> <client_id> <allowed_ips> "
+            "[display name]"
+        )
+
+    server_key = parts[1]
+    provider_type = ProviderType(parts[2])
+    if provider_type != ProviderType.WIREGUARD:
+        raise ValueError("Only wireguard client creation is supported")
+
+    client_id = parts[3]
+    allowed_ips = parts[4]
+    display_name = " ".join(parts[5:]) or None
+    return server_key, provider_type, client_id, allowed_ips, display_name
 
 
 async def _ensure_admin(callback: CallbackQuery, user_role: UserRole) -> bool:
@@ -161,6 +183,18 @@ async def handle_provider_client_action(
     if not await _ensure_admin(callback, user_role):
         return
 
+    if callback_data.action == ProviderClientAction.CREATE:
+        text = render_provider_client_create_help(
+            server_key=callback_data.key,
+            provider_type=callback_data.provider,
+        )
+        await send_or_edit_text(
+            event=callback,
+            text=text,
+            reply_markup=build_server_back_keyboard(server_key=callback_data.key),
+        )
+        return
+
     if callback_data.action == ProviderClientAction.LIST:
         try:
             clients = await app_context.provider_client_sync_service.list_provider_clients(
@@ -209,6 +243,39 @@ async def handle_provider_client_action(
         text=text,
         reply_markup=build_server_back_keyboard(server_key=callback_data.key),
     )
+
+
+@router.message(F.text.startswith("/wg_create"))
+async def create_wireguard_client_from_command(
+    message: Message,
+    app_context: ApplicationContext,
+    user_role: UserRole,
+) -> None:
+    if user_role != UserRole.ADMIN:
+        return
+
+    try:
+        server_key, provider_type, client_id, allowed_ips, display_name = (
+            _parse_wg_create_command(message.text or "")
+        )
+        result = await app_context.provider_client_sync_service.create_wireguard_client(
+            server_key=server_key,
+            provider_type=provider_type,
+            client_id=client_id,
+            allowed_ips=allowed_ips,
+            display_name=display_name,
+        )
+        text = render_provider_client_create_result(result)
+        reply_markup = build_server_back_keyboard(server_key=server_key)
+    except Exception as exc:
+        text = render_host_action_error(
+            server_key="-",
+            action_key="wg_create",
+            error=exc,
+        )
+        reply_markup = None
+
+    await send_or_edit_text(event=message, text=text, reply_markup=reply_markup)
 
 
 @router.callback_query(ProviderClientItemActionCallback.filter())

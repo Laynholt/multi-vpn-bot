@@ -116,6 +116,15 @@ def build_server_providers_keyboard(
                 action=ProviderClientAction.LIST,
             ).pack(),
         )
+        if provider.type == ProviderType.WIREGUARD:
+            builder.button(
+                text=f"Create {provider.type.value}",
+                callback_data=ProviderClientActionCallback(
+                    key=server_key,
+                    provider=provider.type,
+                    action=ProviderClientAction.CREATE,
+                ).pack(),
+            )
         builder.button(
             text=f"Синхронизировать {provider.type.value}",
             callback_data=ProviderClientActionCallback(

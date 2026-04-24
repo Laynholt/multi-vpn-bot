@@ -9,7 +9,11 @@ from app.core.registry import RegisteredServer, ServerRegistry
 from app.providers import BaseProvider
 from app.services.client_inventory import VpnClientSnapshot
 from app.services.host_actions import HostActionDefinition, HostActionExecution
-from app.services.provider_clients import ProviderClientDeleteResult, ProviderClientSyncResult
+from app.services.provider_clients import (
+    ProviderClientActionResult,
+    ProviderClientDeleteResult,
+    ProviderClientSyncResult,
+)
 
 
 def _server_title(server: RegisteredServer) -> str:
@@ -243,5 +247,35 @@ def render_provider_client_delete_result(result: ProviderClientDeleteResult) -> 
             f"server: <code>{escape(result.sync_result.server_key)}</code>",
             f"provider: <code>{escape(result.sync_result.provider_type.value)}</code>",
             f"remaining synced: {len(result.sync_result.clients)}",
+        ]
+    )
+
+
+def render_provider_client_create_help(*, server_key: str, provider_type: ProviderType) -> str:
+    return "\n".join(
+        [
+            "Create WireGuard client",
+            "",
+            "Send command:",
+            f"<code>/wg_create {escape(server_key)} {escape(provider_type.value)} "
+            "client_id allowed_ips Display Name</code>",
+            "",
+            "Example:",
+            f"<code>/wg_create {escape(server_key)} {escape(provider_type.value)} "
+            "alice 10.0.0.2/32 Alice Phone</code>",
+        ]
+    )
+
+
+def render_provider_client_create_result(result: ProviderClientActionResult) -> str:
+    provider_client_id = str(result.provider_client.get("provider_client_id", "-"))
+    return "\n".join(
+        [
+            "Клиент создан",
+            "",
+            f"client: <code>{escape(provider_client_id)}</code>",
+            f"server: <code>{escape(result.sync_result.server_key)}</code>",
+            f"provider: <code>{escape(result.sync_result.provider_type.value)}</code>",
+            f"synced: {len(result.sync_result.clients)}",
         ]
     )

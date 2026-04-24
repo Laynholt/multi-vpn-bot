@@ -287,6 +287,36 @@ async def test_create_client_syncs_provider_inventory_after_action(
 
 
 @pytest.mark.asyncio
+async def test_create_wireguard_client_builds_payload_and_syncs(
+    database: DatabaseManager,
+) -> None:
+    provider = FakeProvider([])
+    service = ProviderClientSyncService(
+        server_registry=_registry(),
+        executor_factory=FakeExecutorFactory(),
+        provider_factory=FakeProviderFactory(provider),
+        client_inventory_service=ClientInventoryService(database),
+    )
+
+    result = await service.create_wireguard_client(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        client_id="alice",
+        allowed_ips="10.0.0.2/32",
+        display_name="Alice Phone",
+    )
+
+    assert provider.create_calls == [
+        {
+            "client_id": "alice",
+            "allowed_ips": "10.0.0.2/32",
+            "display_name": "Alice Phone",
+        }
+    ]
+    assert result.provider_client["provider_client_id"] == "peer-created"
+
+
+@pytest.mark.asyncio
 async def test_delete_client_syncs_provider_inventory_after_action(
     database: DatabaseManager,
 ) -> None:

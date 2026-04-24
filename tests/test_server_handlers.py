@@ -54,6 +54,7 @@ class FakeProviderClientSyncService:
         self.list_calls: list[tuple[str, ProviderType]] = []
         self.get_calls: list[tuple[str, ProviderType, int]] = []
         self.delete_calls: list[tuple[str, ProviderType, int]] = []
+        self.create_wireguard_calls: list[tuple[str, ProviderType, str, str, str | None]] = []
 
     async def sync_provider_clients(
         self,
@@ -112,6 +113,27 @@ class FakeProviderClientSyncService:
             ),
         )
 
+    async def create_wireguard_client(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+        client_id: str,
+        allowed_ips: str,
+        display_name: str | None,
+    ) -> object:
+        self.create_wireguard_calls.append(
+            (server_key, provider_type, client_id, allowed_ips, display_name)
+        )
+        return SimpleNamespace(
+            provider_client={"provider_client_id": "peer-created"},
+            sync_result=SimpleNamespace(
+                server_key=server_key,
+                provider_type=provider_type,
+                clients=(),
+            ),
+        )
+
 
 @dataclass
 class FakeContext:
@@ -119,6 +141,100 @@ class FakeContext:
     host_actions_service: FakeHostActionsService
     provider_client_sync_service: FakeProviderClientSyncService
     config: SimpleNamespace
+
+
+class FakeMessage:
+    def __init__(self, text: str) -> None:
+        self.text = text
+
+
+@pytest.mark.asyncio
+async def test_create_provider_client_renders_command_help(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, object]] = []
+
+    async def fake_send_or_edit_text(**kwargs) -> None:  # noqa: ANN003
+        sent.append(kwargs)
+
+    monkeypatch.setattr(server_handlers, "send_or_edit_text", fake_send_or_edit_text)
+
+    callback = FakeCallback()
+    context = FakeContext(
+        server_registry=ServerRegistry.from_config(load_config("configs/config.example.json")),
+        host_actions_service=FakeHostActionsService(),
+        provider_client_sync_service=FakeProviderClientSyncService(),
+        config=SimpleNamespace(telegram=SimpleNamespace(max_message_length=4000)),
+    )
+
+    await server_handlers.handle_provider_client_action(
+        callback,
+        ProviderClientActionCallback(
+            key="vps-nl",
+            provider=ProviderType.WIREGUARD,
+            action=ProviderClientAction.CREATE,
+        ),
+        context,
+        UserRole.ADMIN,
+    )
+
+    assert "/wg_create vps-nl wireguard" in sent[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_create_wireguard_client_command_runs_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, object]] = []
+
+    async def fake_send_or_edit_text(**kwargs) -> None:  # noqa: ANN003
+        sent.append(kwargs)
+
+    monkeypatch.setattr(server_handlers, "send_or_edit_text", fake_send_or_edit_text)
+
+    service = FakeProviderClientSyncService()
+    context = FakeContext(
+        server_registry=ServerRegistry.from_config(load_config("configs/config.example.json")),
+        host_actions_service=FakeHostActionsService(),
+        provider_client_sync_service=service,
+        config=SimpleNamespace(telegram=SimpleNamespace(max_message_length=4000)),
+    )
+
+    await server_handlers.create_wireguard_client_from_command(
+        FakeMessage("/wg_create vps-nl wireguard alice 10.0.0.2/32 Alice Phone"),
+        context,
+        UserRole.ADMIN,
+    )
+
+    assert service.create_wireguard_calls == [
+        ("vps-nl", ProviderType.WIREGUARD, "alice", "10.0.0.2/32", "Alice Phone")
+    ]
+    assert "Клиент создан" in sent[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_create_wireguard_client_command_rejects_regular_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, object]] = []
+
+    async def fake_send_or_edit_text(**kwargs) -> None:  # noqa: ANN003
+        sent.append(kwargs)
+
+    monkeypatch.setattr(server_handlers, "send_or_edit_text", fake_send_or_edit_text)
+
+    await server_handlers.create_wireguard_client_from_command(
+        FakeMessage("/wg_create vps-nl wireguard alice 10.0.0.2/32"),
+        FakeContext(
+            server_registry=ServerRegistry.from_config(load_config("configs/config.example.json")),
+            host_actions_service=FakeHostActionsService(),
+            provider_client_sync_service=FakeProviderClientSyncService(),
+            config=SimpleNamespace(telegram=SimpleNamespace(max_message_length=4000)),
+        ),
+        UserRole.USER,
+    )
+
+    assert sent == []
 
 
 @pytest.mark.asyncio
@@ -323,3 +439,4 @@ async def test_confirm_delete_provider_client_runs_service(
         ("vps-nl", ProviderType.WIREGUARD, 12)
     ]
     assert "Клиент удалён" in sent[0]["text"]
+ 

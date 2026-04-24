@@ -4,6 +4,8 @@ from datetime import datetime
 
 from app.bot.formatters import (
     render_host_action_result,
+    render_provider_client_create_help,
+    render_provider_client_create_result,
     render_provider_client_delete_confirmation,
     render_provider_client_delete_result,
     render_provider_client_sync_result,
@@ -20,7 +22,11 @@ from app.domain.enums.common import ClientStatus
 from app.providers import ProviderFactory, ProviderRegistry
 from app.services.client_inventory import VpnClientSnapshot
 from app.services.host_actions import HostActionExecution, HostActionRegistry
-from app.services.provider_clients import ProviderClientDeleteResult, ProviderClientSyncResult
+from app.services.provider_clients import (
+    ProviderClientActionResult,
+    ProviderClientDeleteResult,
+    ProviderClientSyncResult,
+)
 
 
 def _registry() -> ServerRegistry:
@@ -253,3 +259,31 @@ def test_render_provider_client_delete_result_summarizes_action() -> None:
     assert "Клиент удалён" in text
     assert "<code>peer-1</code>" in text
     assert "remaining synced: 0" in text
+
+
+def test_render_provider_client_create_help_contains_command_template() -> None:
+    text = render_provider_client_create_help(
+        server_key="srv-html",
+        provider_type=ProviderType.WIREGUARD,
+    )
+
+    assert "/wg_create srv-html wireguard" in text
+    assert "client_id" in text
+    assert "allowed_ips" in text
+
+
+def test_render_provider_client_create_result_summarizes_action() -> None:
+    result = ProviderClientActionResult(
+        provider_client={"provider_client_id": "peer-created"},
+        sync_result=ProviderClientSyncResult(
+            server_key="srv-html",
+            provider_type=ProviderType.WIREGUARD,
+            clients=(),
+        ),
+    )
+
+    text = render_provider_client_create_result(result)
+
+    assert "Клиент создан" in text
+    assert "<code>peer-created</code>" in text
+    assert "synced: 0" in text

@@ -5,11 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
+from app.core.config.models import ProviderType
 from app.domain.enums.common import ClientStatus
 from app.services.client_inventory import VpnClientSnapshot, VpnClientSyncItem
 
 if TYPE_CHECKING:
-    from app.core.config.models import ProviderConfig, ProviderType
+    from app.core.config.models import ProviderConfig
     from app.core.executors import BaseExecutor, ExecutorFactory
     from app.core.registry import RegisteredServer, ServerRegistry
     from app.providers import BaseProvider, ProviderFactory
@@ -157,6 +158,29 @@ class ProviderClientSyncService:
         return ProviderClientActionResult(
             provider_client=provider_client,
             sync_result=sync_result,
+        )
+
+    async def create_wireguard_client(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+        client_id: str,
+        allowed_ips: str,
+        display_name: str | None = None,
+    ) -> ProviderClientActionResult:
+        if provider_type != ProviderType.WIREGUARD:
+            raise ValueError("WireGuard client creation requires wireguard provider")
+        payload: dict[str, Any] = {
+            "client_id": client_id,
+            "allowed_ips": allowed_ips,
+        }
+        if display_name:
+            payload["display_name"] = display_name
+        return await self.create_client(
+            server_key=server_key,
+            provider_type=provider_type,
+            payload=payload,
         )
 
     async def delete_client(

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from collections.abc import AsyncIterator
+from io import BytesIO
+from zipfile import ZipFile
 
 import pytest
 
@@ -15,7 +17,7 @@ from app.core.config.models import (
 from app.core.registry import RegisteredServer, ServerRegistry
 from app.infrastructure.db import DatabaseManager
 from app.services.client_inventory import ClientInventoryService, VpnClientSyncItem
-from app.services.config_delivery import ConfigDeliveryService
+from app.services.config_delivery import ConfigDeliveryFile, ConfigDeliveryService
 
 
 @pytest.fixture
@@ -200,3 +202,53 @@ async def test_export_client_config_file_reports_missing_client(
 
     with pytest.raises(ValueError, match="VPN client 404 does not exist"):
         await service.export_client_config_file(vpn_client_id=404)
+
+
+def test_build_config_archive_packs_config_files() -> None:
+    service = ConfigDeliveryService(
+        server_registry=_registry(),
+        executor_factory=FakeExecutorFactory(),
+        provider_factory=FakeProviderFactory(FakeProvider({})),
+        client_inventory_service=object(),
+    )
+
+    archive = service.build_config_archive(
+        target_user_id=1001,
+        files=(
+            ConfigDeliveryFile(
+                filename="alice.conf",
+                content=b"alice-config",
+                server_key="vps-nl",
+                provider_type=ProviderType.WIREGUARD,
+                provider_client_id="peer-1",
+                display_name="Alice",
+            ),
+            ConfigDeliveryFile(
+                filename="bob.conf",
+                content=b"bob-config",
+                server_key="vps-nl",
+                provider_type=ProviderType.WIREGUARD,
+                provider_client_id="peer-2",
+                display_name="Bob",
+            ),
+        ),
+    )
+
+    assert archive.filename == "vpn_configs_1001.zip"
+    assert archive.file_count == 2
+    with ZipFile(BytesIO(archive.content)) as zip_file:
+        assert zip_file.namelist() == ["alice.conf", "bob.conf"]
+        assert zip_file.read("alice.conf") == b"alice-config"
+        assert zip_file.read("bob.conf") == b"bob-config"
+
+
+def test_build_config_archive_rejects_empty_files() -> None:
+    service = ConfigDeliveryService(
+        server_registry=_registry(),
+        executor_factory=FakeExecutorFactory(),
+        provider_factory=FakeProviderFactory(FakeProvider({})),
+        client_inventory_service=object(),
+    )
+
+    with pytest.raises(ValueError, match="No config files to archive"):
+        service.build_config_archive(target_user_id=1001, files=())

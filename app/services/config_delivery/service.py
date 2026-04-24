@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from io import BytesIO
 from typing import TYPE_CHECKING
+from zipfile import ZIP_DEFLATED, ZipFile
 
 from app.core.config.models import ProviderType
 
@@ -39,6 +41,13 @@ class ConfigDeliveryError:
 class ConfigDeliveryResult:
     files: tuple[ConfigDeliveryFile, ...]
     errors: tuple[ConfigDeliveryError, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ConfigDeliveryArchive:
+    filename: str
+    content: bytes
+    file_count: int
 
 
 class ConfigDeliveryService:
@@ -86,6 +95,29 @@ class ConfigDeliveryService:
             raise ValueError(f"VPN client {vpn_client_id} does not exist")
         return await self._export_client_config(client)
 
+    def build_config_archive(
+        self,
+        *,
+        target_user_id: int,
+        files: tuple[ConfigDeliveryFile, ...],
+    ) -> ConfigDeliveryArchive:
+        if not files:
+            raise ValueError("No config files to archive")
+
+        buffer = BytesIO()
+        used_names: set[str] = set()
+        with ZipFile(buffer, mode="w", compression=ZIP_DEFLATED) as zip_file:
+            for item in files:
+                archive_name = self._deduplicate_archive_name(item.filename, used_names)
+                used_names.add(archive_name)
+                zip_file.writestr(archive_name, item.content)
+
+        return ConfigDeliveryArchive(
+            filename=f"vpn_configs_{target_user_id}.zip",
+            content=buffer.getvalue(),
+            file_count=len(files),
+        )
+
     async def _export_client_config(
         self,
         client: VpnClientSnapshot,
@@ -127,3 +159,20 @@ class ConfigDeliveryService:
         )
         safe_name = re.sub(r"[^A-Za-z0-9_.@-]+", "_", raw_name).strip("._")
         return f"{safe_name or 'vpn_config'}.conf"
+
+    def _deduplicate_archive_name(self, filename: str, used_names: set[str]) -> str:
+        safe_filename = filename or "vpn_config.conf"
+        if safe_filename not in used_names:
+            return safe_filename
+
+        stem, separator, suffix = safe_filename.rpartition(".")
+        if not separator:
+            stem = safe_filename
+            suffix = ""
+
+        index = 2
+        while True:
+            candidate = f"{stem}_{index}.{suffix}" if suffix else f"{stem}_{index}"
+            if candidate not in used_names:
+                return candidate
+            index += 1

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from types import SimpleNamespace
 
@@ -12,7 +12,11 @@ from app.core.config import load_config
 from app.core.config.models import ProviderType
 from app.core.permissions import UserRole
 from app.core.registry import ServerRegistry
-from app.services.config_delivery import ConfigDeliveryFile, ConfigDeliveryResult
+from app.services.config_delivery import (
+    ConfigDeliveryArchive,
+    ConfigDeliveryFile,
+    ConfigDeliveryResult,
+)
 from app.services.traffic_stats import TrafficAdminDailySummary
 
 
@@ -114,6 +118,7 @@ class FakeConfigDeliveryService:
     result: ConfigDeliveryResult
     client_file: ConfigDeliveryFile | None = None
     error: Exception | None = None
+    archive_calls: list[dict[str, object]] = field(default_factory=list)
 
     async def list_user_config_files(self, *, telegram_user_id: int) -> ConfigDeliveryResult:
         self.user_calls.append(telegram_user_id)
@@ -128,6 +133,24 @@ class FakeConfigDeliveryService:
         if self.client_file is None:
             raise RuntimeError("missing fake client file")
         return self.client_file
+
+    def build_config_archive(
+        self,
+        *,
+        target_user_id: int,
+        files: tuple[ConfigDeliveryFile, ...],
+    ) -> ConfigDeliveryArchive:
+        self.archive_calls.append(
+            {
+                "target_user_id": target_user_id,
+                "file_count": len(files),
+            }
+        )
+        return ConfigDeliveryArchive(
+            filename=f"vpn_configs_{target_user_id}.zip",
+            content=b"zip-content",
+            file_count=len(files),
+        )
 
 
 @dataclass
@@ -414,6 +437,111 @@ async def test_send_config_command_sends_selected_client(
     assert bot.documents[0]["filename"] == "bob.conf"
     assert audit_service.calls[0]["vpn_client_id"] == 42
     assert "Отправлено: 1" in sent[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_send_config_command_archives_multiple_user_configs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, object]] = []
+
+    async def fake_send_or_edit_text(**kwargs: object) -> None:
+        sent.append(kwargs)
+
+    monkeypatch.setattr(admin_users, "send_or_edit_text", fake_send_or_edit_text)
+    bot = FakeBot()
+    audit_service = FakeAdminAuditService(calls=[])
+    service = FakeConfigDeliveryService(
+        user_calls=[],
+        client_calls=[],
+        result=ConfigDeliveryResult(
+            files=(
+                ConfigDeliveryFile(
+                    filename="alice.conf",
+                    content=b"alice",
+                    server_key="vps-nl",
+                    provider_type=ProviderType.WIREGUARD,
+                    provider_client_id="peer-1",
+                    display_name="Alice Phone",
+                ),
+                ConfigDeliveryFile(
+                    filename="bob.conf",
+                    content=b"bob",
+                    server_key="vps-nl",
+                    provider_type=ProviderType.WIREGUARD,
+                    provider_client_id="peer-2",
+                    display_name="Bob Laptop",
+                ),
+            ),
+            errors=(),
+        ),
+    )
+
+    await admin_users.send_config_command(
+        FakeAdminMessage("/send_config user=1001", bot),
+        SimpleNamespace(config_delivery_service=service, admin_audit_service=audit_service),
+        UserRole.ADMIN,
+    )
+
+    assert service.archive_calls == [{"target_user_id": 1001, "file_count": 2}]
+    assert bot.documents == [
+        {
+            "chat_id": 1001,
+            "filename": "vpn_configs_1001.zip",
+            "caption": "VPN configs archive: 2 files",
+        }
+    ]
+    assert audit_service.calls[0]["file_count"] == 2
+    assert "Отправлено: 2" in sent[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_send_config_command_can_disable_archive(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, object]] = []
+
+    async def fake_send_or_edit_text(**kwargs: object) -> None:
+        sent.append(kwargs)
+
+    monkeypatch.setattr(admin_users, "send_or_edit_text", fake_send_or_edit_text)
+    bot = FakeBot()
+    audit_service = FakeAdminAuditService(calls=[])
+    service = FakeConfigDeliveryService(
+        user_calls=[],
+        client_calls=[],
+        result=ConfigDeliveryResult(
+            files=(
+                ConfigDeliveryFile(
+                    filename="alice.conf",
+                    content=b"alice",
+                    server_key="vps-nl",
+                    provider_type=ProviderType.WIREGUARD,
+                    provider_client_id="peer-1",
+                    display_name="Alice Phone",
+                ),
+                ConfigDeliveryFile(
+                    filename="bob.conf",
+                    content=b"bob",
+                    server_key="vps-nl",
+                    provider_type=ProviderType.WIREGUARD,
+                    provider_client_id="peer-2",
+                    display_name="Bob Laptop",
+                ),
+            ),
+            errors=(),
+        ),
+    )
+
+    await admin_users.send_config_command(
+        FakeAdminMessage("/send_config user=1001 archive=false", bot),
+        SimpleNamespace(config_delivery_service=service, admin_audit_service=audit_service),
+        UserRole.ADMIN,
+    )
+
+    assert service.archive_calls == []
+    assert [item["filename"] for item in bot.documents] == ["alice.conf", "bob.conf"]
+    assert "Отправлено: 2" in sent[0]["text"]
 
 
 @pytest.mark.asyncio

@@ -34,7 +34,11 @@ from app.bot.user_admin_actions import AdminUserAction
 from app.context import ApplicationContext
 from app.core.config.models import ProviderType
 from app.core.permissions import UserRole
-from app.services.config_delivery import ConfigDeliveryFile, ConfigDeliveryResult
+from app.services.config_delivery import (
+    ConfigDeliveryArchive,
+    ConfigDeliveryFile,
+    ConfigDeliveryResult,
+)
 from app.services.traffic_stats import TrafficAdminDailySummary
 
 router = Router(name="admin-users")
@@ -46,6 +50,7 @@ MAX_ADMIN_TRAFFIC_CSV_ROWS = 10_000
 class AdminConfigDeliveryQuery:
     target_user_id: int
     vpn_client_id: int | None = None
+    archive: bool | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,17 +115,42 @@ async def _send_config_delivery_files(
         )
 
 
+async def _send_config_delivery_archive(
+    *,
+    bot: Bot,
+    target_user_id: int,
+    archive: ConfigDeliveryArchive,
+) -> None:
+    await bot.send_document(
+        chat_id=target_user_id,
+        document=BufferedInputFile(archive.content, filename=archive.filename),
+        caption=f"VPN configs archive: {archive.file_count} files",
+    )
+
+
 def _normalize_optional(value: str) -> str | None:
     return None if value.lower() in {"all", "-", "none"} else value
+
+
+def _parse_bool_argument(value: str) -> bool:
+    lowered = value.lower()
+    if lowered in {"1", "true", "yes", "y", "on"}:
+        return True
+    if lowered in {"0", "false", "no", "n", "off"}:
+        return False
+    raise ValueError(f"Expected boolean value, got {value!r}")
 
 
 def _parse_admin_config_delivery_query(text: str) -> AdminConfigDeliveryQuery:
     parts = shlex.split(text)
     values: dict[str, str] = {}
-    allowed_keys = {"user", "chat", "client"}
+    allowed_keys = {"user", "chat", "client", "archive"}
     for part in parts[1:]:
         if "=" not in part:
-            raise ValueError("Usage: /send_config user=<telegram_id> [client=<vpn_client_id>]")
+            raise ValueError(
+                "Usage: /send_config user=<telegram_id> "
+                "[client=<vpn_client_id>] [archive=<true|false>]"
+            )
         key, value = part.split("=", 1)
         if key not in allowed_keys:
             raise ValueError(f"Unknown argument: {key}")
@@ -128,12 +158,17 @@ def _parse_admin_config_delivery_query(text: str) -> AdminConfigDeliveryQuery:
 
     target_user_value = values.get("user") or values.get("chat")
     if target_user_value is None:
-        raise ValueError("Usage: /send_config user=<telegram_id> [client=<vpn_client_id>]")
+        raise ValueError(
+            "Usage: /send_config user=<telegram_id> "
+            "[client=<vpn_client_id>] [archive=<true|false>]"
+        )
 
     client_value = values.get("client")
+    archive_value = values.get("archive")
     return AdminConfigDeliveryQuery(
         target_user_id=int(target_user_value),
         vpn_client_id=int(client_value) if client_value is not None else None,
+        archive=_parse_bool_argument(archive_value) if archive_value is not None else None,
     )
 
 
@@ -196,6 +231,18 @@ async def _load_admin_config_delivery_result(
         vpn_client_id=query.vpn_client_id,
     )
     return ConfigDeliveryResult(files=(config_file,), errors=())
+
+
+def _should_archive_config_delivery(
+    *,
+    query: AdminConfigDeliveryQuery,
+    result: ConfigDeliveryResult,
+) -> bool:
+    if not result.files:
+        return False
+    if query.archive is not None:
+        return query.archive
+    return len(result.files) > 1
 
 
 @router.callback_query(MenuActionCallback.filter(F.section == MenuSection.ADMIN))
@@ -319,11 +366,22 @@ async def send_config_command(
         if admin_telegram_user_id is None:
             raise RuntimeError("Admin Telegram user is unavailable")
         result = await _load_admin_config_delivery_result(app_context=app_context, query=query)
-        await _send_config_delivery_files(
-            bot=message.bot,
-            target_user_id=query.target_user_id,
-            files=result.files,
-        )
+        if _should_archive_config_delivery(query=query, result=result):
+            archive = app_context.config_delivery_service.build_config_archive(
+                target_user_id=query.target_user_id,
+                files=result.files,
+            )
+            await _send_config_delivery_archive(
+                bot=message.bot,
+                target_user_id=query.target_user_id,
+                archive=archive,
+            )
+        else:
+            await _send_config_delivery_files(
+                bot=message.bot,
+                target_user_id=query.target_user_id,
+                files=result.files,
+            )
         await app_context.admin_audit_service.record_config_delivery(
             admin_telegram_user_id=admin_telegram_user_id,
             target_telegram_user_id=query.target_user_id,

@@ -15,6 +15,7 @@ if TYPE_CHECKING:
     from app.infrastructure.db import DatabaseManager
     from app.services.host_actions import HostActionsService
     from app.services.messages import MessageBridgeService
+    from app.services.provider_clients import ProviderClientSyncService
     from app.services.users import TelegramUserService
 
 
@@ -28,6 +29,7 @@ class ApplicationContext:
     executor_factory: ExecutorFactory
     provider_factory: ProviderFactory
     host_actions_service: HostActionsService
+    provider_client_sync_service: ProviderClientSyncService
     access_service: AccessService
     telegram_user_service: TelegramUserService
     message_bridge_service: MessageBridgeService

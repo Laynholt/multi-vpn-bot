@@ -8,7 +8,8 @@
 - этап 14 начат: добавлен executor-backed `WireGuardProvider` для healthcheck,
   списка peers, peer stats, экспорта клиентского `.conf`, создания и удаления peers,
   рендера и записи клиентских `.conf`, генерации клиентских ключей и получения public key
-  через executor stdin;
+  через executor stdin, а также service layer для синхронизации provider actions
+  с client inventory;
 - собран базовый каркас проекта;
 - добавлены строгие pydantic-модели JSON-конфига;
 - добавлены базовое логирование и безопасный bootstrap;
@@ -50,6 +51,7 @@ python -m app.main --config configs/config.json
 - `app/core/executors`: единый local/SSH executor contract;
 - `app/services/host_actions`: запуск системных действий независимо от провайдеров;
 - `app/services/client_inventory`: единый реестр VPN-клиентов и связи с Telegram users;
+- `app/services/provider_clients`: синхронизация provider actions с client inventory;
 - `app/services/traffic_stats`: нормализация статистики, raw samples,
   delta calculation и дневные агрегаты;
 - `app/providers`: базовый provider contract, capabilities, factory, registry
@@ -64,5 +66,5 @@ python -m app.main --config configs/config.json
 
 ## Следующий шаг
 
-Следующий логичный блок — продолжение `WireGuard provider`: синхронизация inventory
-после provider actions и подключение этих действий к Telegram UI.
+Следующий логичный блок — подключение provider client actions к Telegram UI:
+создание/удаление WireGuard-клиентов через сервисный слой и выдача конфигов пользователям.

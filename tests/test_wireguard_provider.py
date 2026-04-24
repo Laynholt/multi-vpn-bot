@@ -293,6 +293,100 @@ async def test_wireguard_create_client_writes_rendered_config() -> None:
 
 
 @pytest.mark.asyncio
+async def test_wireguard_create_client_generates_key_pair_and_writes_config() -> None:
+    genkey_command = ("wg", "genkey")
+    pubkey_command = ("wg", "pubkey")
+    set_command = (
+        "wg",
+        "set",
+        "wg0",
+        "peer",
+        "pub1",
+        "allowed-ips",
+        "10.0.0.2/32",
+    )
+    write_command = ("install", "-m", "600", "/dev/stdin", "/etc/wireguard/clients/alice.conf")
+    save_command = ("wg-quick", "save", "wg0")
+    executor = FakeExecutor(
+        {
+            genkey_command: _result(genkey_command, stdout="client-private-key\n"),
+            pubkey_command: _result(pubkey_command, stdout="pub1\n"),
+            set_command: _result(set_command),
+            write_command: _result(write_command),
+            save_command: _result(save_command),
+        }
+    )
+    provider = WireGuardProvider(_provider_config(), executor=executor)
+
+    client = await provider.create_client(
+        {
+            "client_id": "alice",
+            "server_public_key": "server-public-key",
+            "endpoint": "vpn.example.com:51820",
+            "allowed_ips": "10.0.0.2/32",
+        }
+    )
+
+    assert client["provider_client_id"] == "pub1"
+    assert client["metadata"] == {
+        "allowed_ips": "10.0.0.2/32",
+        "public_key": "pub1",
+        "config_path": "/etc/wireguard/clients/alice.conf",
+        "private_key_generated": True,
+    }
+    assert executor.commands == [
+        genkey_command,
+        pubkey_command,
+        set_command,
+        write_command,
+        save_command,
+    ]
+    assert executor.inputs[1] == "client-private-key\n"
+    assert "PrivateKey = client-private-key\n" in (executor.inputs[3] or "")
+    assert all("client-private-key" not in " ".join(command) for command in executor.commands)
+
+
+@pytest.mark.asyncio
+async def test_wireguard_create_client_derives_public_key_from_private_key() -> None:
+    pubkey_command = ("wg", "pubkey")
+    set_command = (
+        "wg",
+        "set",
+        "wg0",
+        "peer",
+        "pub1",
+        "allowed-ips",
+        "10.0.0.2/32",
+    )
+    write_command = ("install", "-m", "600", "/dev/stdin", "/etc/wireguard/clients/alice.conf")
+    save_command = ("wg-quick", "save", "wg0")
+    executor = FakeExecutor(
+        {
+            pubkey_command: _result(pubkey_command, stdout="pub1\n"),
+            set_command: _result(set_command),
+            write_command: _result(write_command),
+            save_command: _result(save_command),
+        }
+    )
+    provider = WireGuardProvider(_provider_config(), executor=executor)
+
+    client = await provider.create_client(
+        {
+            "client_id": "alice",
+            "private_key": "client-private-key",
+            "server_public_key": "server-public-key",
+            "endpoint": "vpn.example.com:51820",
+            "allowed_ips": "10.0.0.2/32",
+        }
+    )
+
+    assert client["provider_client_id"] == "pub1"
+    assert executor.commands == [pubkey_command, set_command, write_command, save_command]
+    assert executor.inputs[0] == "client-private-key\n"
+    assert all("client-private-key" not in " ".join(command) for command in executor.commands)
+
+
+@pytest.mark.asyncio
 async def test_wireguard_create_client_uses_docker_runtime_commands() -> None:
     set_command = (
         "docker",
@@ -389,6 +483,73 @@ async def test_wireguard_create_client_writes_config_inside_docker_container() -
 
     assert executor.commands == [set_command, write_command, save_command]
     assert executor.inputs[1] is not None
+
+
+@pytest.mark.asyncio
+async def test_wireguard_create_client_generates_keys_inside_docker_container() -> None:
+    genkey_command = ("docker", "exec", "wireguard", "wg", "genkey")
+    pubkey_command = ("docker", "exec", "-i", "wireguard", "wg", "pubkey")
+    set_command = (
+        "docker",
+        "exec",
+        "wireguard",
+        "wg",
+        "set",
+        "wg0",
+        "peer",
+        "pub1",
+        "allowed-ips",
+        "10.0.0.2/32",
+    )
+    write_command = (
+        "docker",
+        "exec",
+        "-i",
+        "wireguard",
+        "install",
+        "-m",
+        "600",
+        "/dev/stdin",
+        "/etc/wireguard/clients/alice.conf",
+    )
+    save_command = ("docker", "exec", "wireguard", "wg-quick", "save", "wg0")
+    executor = FakeExecutor(
+        {
+            genkey_command: _result(genkey_command, stdout="client-private-key\n"),
+            pubkey_command: _result(pubkey_command, stdout="pub1\n"),
+            set_command: _result(set_command),
+            write_command: _result(write_command),
+            save_command: _result(save_command),
+        }
+    )
+    provider = WireGuardProvider(
+        _provider_config(
+            {
+                "runtime": "docker",
+                "docker_container_name": "wireguard",
+            }
+        ),
+        executor=executor,
+    )
+
+    await provider.create_client(
+        {
+            "client_id": "alice",
+            "server_public_key": "server-public-key",
+            "endpoint": "vpn.example.com:51820",
+            "allowed_ips": "10.0.0.2/32",
+        }
+    )
+
+    assert executor.commands == [
+        genkey_command,
+        pubkey_command,
+        set_command,
+        write_command,
+        save_command,
+    ]
+    assert executor.inputs[1] == "client-private-key\n"
+    assert all("client-private-key" not in " ".join(command) for command in executor.commands)
 
 
 @pytest.mark.asyncio

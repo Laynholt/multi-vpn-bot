@@ -94,6 +94,12 @@ class WireGuardPeerDump:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class WireGuardKeyPair:
+    private_key: str
+    public_key: str
+
+
 class WireGuardProvider(BaseProvider):
     """WireGuard provider backed by local or remote executor commands."""
 
@@ -154,9 +160,22 @@ class WireGuardProvider(BaseProvider):
         return None
 
     async def create_client(self, payload: dict[str, Any]) -> dict[str, Any]:
-        public_key = self._validate_public_key(str(payload["provider_client_id"]))
-        allowed_ips = self._validate_allowed_ips(str(payload["allowed_ips"]))
-        persistent_keepalive = payload.get("persistent_keepalive")
+        client_payload = dict(payload)
+        private_key_generated = False
+        if client_payload.get("provider_client_id") is None:
+            private_key = client_payload.get("private_key")
+            if private_key is None:
+                key_pair = await self.generate_client_keys()
+                client_payload["private_key"] = key_pair.private_key
+                public_key = key_pair.public_key
+                private_key_generated = True
+            else:
+                public_key = await self._derive_public_key(str(private_key))
+            client_payload["provider_client_id"] = public_key
+
+        public_key = self._validate_public_key(str(client_payload["provider_client_id"]))
+        allowed_ips = self._validate_allowed_ips(str(client_payload["allowed_ips"]))
+        persistent_keepalive = client_payload.get("persistent_keepalive")
 
         command: tuple[str, ...] = (
             "set",
@@ -177,27 +196,39 @@ class WireGuardProvider(BaseProvider):
         if not result.ok:
             raise RuntimeError(f"Failed to create WireGuard peer {public_key!r}")
         config_path = None
-        if payload.get("private_key") is not None:
-            client_id = self._validate_client_file_id(str(payload["client_id"]))
-            client_config = self._render_client_config(payload, allowed_ips)
+        if client_payload.get("private_key") is not None:
+            client_id = self._validate_client_file_id(str(client_payload["client_id"]))
+            client_config = self._render_client_config(client_payload, allowed_ips)
             config_path = await self._write_client_config(client_id, client_config)
         await self._apply_config()
 
-        metadata = {
+        metadata: dict[str, object] = {
             "allowed_ips": allowed_ips,
             "persistent_keepalive": str(persistent_keepalive),
             "public_key": public_key,
         }
         if config_path is not None:
             metadata["config_path"] = config_path
+        if private_key_generated:
+            metadata["private_key_generated"] = True
         if persistent_keepalive is None:
             metadata.pop("persistent_keepalive")
         return {
             "provider_client_id": public_key,
-            "display_name": str(payload.get("display_name") or allowed_ips),
+            "display_name": str(client_payload.get("display_name") or allowed_ips),
             "status": "active",
             "metadata": metadata,
         }
+
+    async def generate_client_keys(self) -> WireGuardKeyPair:
+        result = await self._run_wg(("genkey",))
+        if not result.ok:
+            raise RuntimeError("Failed to generate WireGuard private key")
+        private_key = result.stdout.strip()
+        if not private_key:
+            raise RuntimeError("WireGuard private key generation returned empty output")
+        public_key = await self._derive_public_key(private_key)
+        return WireGuardKeyPair(private_key=private_key, public_key=public_key)
 
     async def export_client_config(self, client_id: str) -> bytes:
         safe_client_id = self._validate_client_file_id(client_id)
@@ -238,13 +269,39 @@ class WireGuardProvider(BaseProvider):
             raise RuntimeError("Failed to load WireGuard peer dump")
         return self._parse_peer_dump(result.stdout)
 
-    async def _run_wg(self, args: tuple[str, ...]) -> CommandResult:
+    async def _derive_public_key(self, private_key: str) -> str:
+        result = await self._run_wg(("pubkey",), input_text=f"{private_key}\n")
+        if not result.ok:
+            raise RuntimeError("Failed to derive WireGuard public key")
+        public_key = result.stdout.strip()
+        if not public_key:
+            raise RuntimeError("WireGuard public key derivation returned empty output")
+        return self._validate_public_key(public_key)
+
+    async def _run_wg(
+        self,
+        args: tuple[str, ...],
+        *,
+        input_text: str | None = None,
+    ) -> CommandResult:
         if self.settings.runtime == "docker":
             assert self.settings.docker_container_name is not None
+            if input_text is not None:
+                return await self._run(
+                    (
+                        "docker",
+                        "exec",
+                        "-i",
+                        self.settings.docker_container_name,
+                        "wg",
+                        *args,
+                    ),
+                    input_text=input_text,
+                )
             return await self._run(
                 ("docker", "exec", self.settings.docker_container_name, "wg", *args)
             )
-        return await self._run(("wg", *args))
+        return await self._run(("wg", *args), input_text=input_text)
 
     async def _run_wg_quick(self, args: tuple[str, ...]) -> CommandResult:
         if self.settings.runtime == "docker":

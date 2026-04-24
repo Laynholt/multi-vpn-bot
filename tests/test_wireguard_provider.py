@@ -17,6 +17,7 @@ class FakeExecutor(BaseExecutor):
     def __init__(self, results: Mapping[tuple[str, ...], CommandResult]) -> None:
         self.results = dict(results)
         self.commands: list[tuple[str, ...]] = []
+        self.inputs: list[str | None] = []
 
     async def run(
         self,
@@ -25,9 +26,11 @@ class FakeExecutor(BaseExecutor):
         timeout_seconds: int | None = None,
         cwd: Path | None = None,
         env: Mapping[str, str] | None = None,
+        input_text: str | None = None,
     ) -> CommandResult:
         normalized = self.normalize_command(command)
         self.commands.append(normalized)
+        self.inputs.append(input_text)
         return self.results[normalized]
 
 
@@ -240,6 +243,56 @@ async def test_wireguard_create_client_adds_peer_and_saves_systemd_config() -> N
 
 
 @pytest.mark.asyncio
+async def test_wireguard_create_client_writes_rendered_config() -> None:
+    set_command = (
+        "wg",
+        "set",
+        "wg0",
+        "peer",
+        "pub1",
+        "allowed-ips",
+        "10.0.0.2/32",
+    )
+    write_command = ("install", "-m", "600", "/dev/stdin", "/etc/wireguard/clients/alice.conf")
+    save_command = ("wg-quick", "save", "wg0")
+    executor = FakeExecutor(
+        {
+            set_command: _result(set_command),
+            write_command: _result(write_command),
+            save_command: _result(save_command),
+        }
+    )
+    provider = WireGuardProvider(_provider_config(), executor=executor)
+
+    client = await provider.create_client(
+        {
+            "client_id": "alice",
+            "provider_client_id": "pub1",
+            "private_key": "client-private-key",
+            "server_public_key": "server-public-key",
+            "endpoint": "vpn.example.com:51820",
+            "allowed_ips": "10.0.0.2/32",
+            "dns": ["1.1.1.1", "8.8.8.8"],
+        }
+    )
+
+    assert client["metadata"]["config_path"] == "/etc/wireguard/clients/alice.conf"
+    assert executor.commands == [set_command, write_command, save_command]
+    assert executor.inputs[1] == (
+        "[Interface]\n"
+        "PrivateKey = client-private-key\n"
+        "Address = 10.0.0.2/32\n"
+        "DNS = 1.1.1.1, 8.8.8.8\n"
+        "\n"
+        "[Peer]\n"
+        "PublicKey = server-public-key\n"
+        "Endpoint = vpn.example.com:51820\n"
+        "AllowedIPs = 0.0.0.0/0, ::/0\n"
+        "PersistentKeepalive = 25\n"
+    )
+
+
+@pytest.mark.asyncio
 async def test_wireguard_create_client_uses_docker_runtime_commands() -> None:
     set_command = (
         "docker",
@@ -278,6 +331,64 @@ async def test_wireguard_create_client_uses_docker_runtime_commands() -> None:
     )
 
     assert executor.commands == [set_command, save_command]
+
+
+@pytest.mark.asyncio
+async def test_wireguard_create_client_writes_config_inside_docker_container() -> None:
+    set_command = (
+        "docker",
+        "exec",
+        "wireguard",
+        "wg",
+        "set",
+        "wg0",
+        "peer",
+        "pub1",
+        "allowed-ips",
+        "10.0.0.2/32",
+    )
+    write_command = (
+        "docker",
+        "exec",
+        "-i",
+        "wireguard",
+        "install",
+        "-m",
+        "600",
+        "/dev/stdin",
+        "/etc/wireguard/clients/alice.conf",
+    )
+    save_command = ("docker", "exec", "wireguard", "wg-quick", "save", "wg0")
+    executor = FakeExecutor(
+        {
+            set_command: _result(set_command),
+            write_command: _result(write_command),
+            save_command: _result(save_command),
+        }
+    )
+    provider = WireGuardProvider(
+        _provider_config(
+            {
+                "runtime": "docker",
+                "docker_container_name": "wireguard",
+            }
+        ),
+        executor=executor,
+    )
+
+    await provider.create_client(
+        {
+            "client_id": "alice",
+            "provider_client_id": "pub1",
+            "private_key": "client-private-key",
+            "server_public_key": "server-public-key",
+            "endpoint": "vpn.example.com:51820",
+            "allowed_ips": "10.0.0.2/32",
+        }
+    )
+
+    assert executor.commands == [set_command, write_command, save_command]
+    assert executor.inputs[1] is not None
 
 
 @pytest.mark.asyncio

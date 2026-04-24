@@ -27,6 +27,7 @@ class LocalExecutor(BaseExecutor):
         timeout_seconds: int | None = None,
         cwd: Path | None = None,
         env: Mapping[str, str] | None = None,
+        input_text: str | None = None,
     ) -> CommandResult:
         normalized_command = self.normalize_command(command)
         started_at = time.perf_counter()
@@ -36,13 +37,16 @@ class LocalExecutor(BaseExecutor):
             *normalized_command,
             cwd=str(cwd) if cwd is not None else None,
             env={**os.environ, **dict(env)} if env is not None else None,
+            stdin=asyncio.subprocess.PIPE if input_text is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
 
         try:
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
-                process.communicate(),
+                process.communicate(
+                    input_text.encode("utf-8") if input_text is not None else None
+                ),
                 timeout=timeout_seconds,
             )
         except TimeoutError as exc:

@@ -26,3 +26,16 @@ async def test_local_executor_returns_nonzero_exit_code() -> None:
 
     assert result.ok is False
     assert result.exit_code == 3
+
+
+@pytest.mark.asyncio
+async def test_local_executor_passes_stdin_to_command() -> None:
+    executor = LocalExecutor()
+
+    result = await executor.run(
+        [sys.executable, "-c", "import sys; print(sys.stdin.read().upper())"],
+        input_text="executor-input",
+    )
+
+    assert result.ok is True
+    assert "EXECUTOR-INPUT" in result.stdout

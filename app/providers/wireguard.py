@@ -31,6 +31,13 @@ class WireGuardProviderSettings(BaseModel):
     wireguard_folder: str | None = None
     wireguard_config_filepath: str | None = None
     client_config_dir: str | None = None
+    server_public_key: str | None = None
+    endpoint: str | None = None
+    server_ip: str | None = None
+    server_port: str | int | None = None
+    client_allowed_ips: str = "0.0.0.0/0, ::/0"
+    dns_servers: tuple[str, ...] = ()
+    persistent_keepalive: int | None = 25
     allowed_username_pattern: str = r"a-zA-Z0-9_.@-"
     allowed_public_key_pattern: str = r"a-zA-Z0-9+/=_.@-"
     apply_strategy: Literal["wg_quick_save", "none"] = "wg_quick_save"
@@ -52,6 +59,14 @@ class WireGuardProviderSettings(BaseModel):
         if self.wireguard_folder is not None:
             return posixpath.join(self.wireguard_folder.rstrip("/"), "config", "wg_confs")
         return "/etc/wireguard/clients"
+
+    @property
+    def resolved_endpoint(self) -> str | None:
+        if self.endpoint:
+            return self.endpoint
+        if self.server_ip and self.server_port:
+            return f"{self.server_ip}:{self.server_port}"
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +176,11 @@ class WireGuardProvider(BaseProvider):
         result = await self._run_wg(command)
         if not result.ok:
             raise RuntimeError(f"Failed to create WireGuard peer {public_key!r}")
+        config_path = None
+        if payload.get("private_key") is not None:
+            client_id = self._validate_client_file_id(str(payload["client_id"]))
+            client_config = self._render_client_config(payload, allowed_ips)
+            config_path = await self._write_client_config(client_id, client_config)
         await self._apply_config()
 
         metadata = {
@@ -168,6 +188,8 @@ class WireGuardProvider(BaseProvider):
             "persistent_keepalive": str(persistent_keepalive),
             "public_key": public_key,
         }
+        if config_path is not None:
+            metadata["config_path"] = config_path
         if persistent_keepalive is None:
             metadata.pop("persistent_keepalive")
         return {
@@ -245,10 +267,92 @@ class WireGuardProvider(BaseProvider):
         if not result.ok:
             raise RuntimeError("Failed to persist WireGuard runtime configuration")
 
-    async def _run(self, command: tuple[str, ...]) -> CommandResult:
+    async def _write_client_config(self, client_id: str, config: str) -> str:
+        config_path = posixpath.join(
+            self.settings.resolved_client_config_dir,
+            f"{client_id}.conf",
+        )
+        if self.settings.runtime == "docker":
+            assert self.settings.docker_container_name is not None
+            result = await self._run(
+                (
+                    "docker",
+                    "exec",
+                    "-i",
+                    self.settings.docker_container_name,
+                    "install",
+                    "-m",
+                    "600",
+                    "/dev/stdin",
+                    config_path,
+                ),
+                input_text=config,
+            )
+        else:
+            result = await self._run(
+                ("install", "-m", "600", "/dev/stdin", config_path),
+                input_text=config,
+            )
+        if not result.ok:
+            raise RuntimeError(f"Failed to write WireGuard client config for {client_id!r}")
+        return config_path
+
+    def _render_client_config(self, payload: dict[str, Any], address: str) -> str:
+        private_key = str(payload["private_key"])
+        server_public_key = str(
+            payload.get("server_public_key") or self.settings.server_public_key or ""
+        )
+        endpoint = str(payload.get("endpoint") or self.settings.resolved_endpoint or "")
+        if not server_public_key:
+            raise ValueError("WireGuard client config requires server_public_key")
+        if not endpoint:
+            raise ValueError("WireGuard client config requires endpoint")
+
+        dns_value = self._format_dns(payload.get("dns"))
+        allowed_ips = str(payload.get("client_allowed_ips") or self.settings.client_allowed_ips)
+        persistent_keepalive = payload.get(
+            "client_persistent_keepalive",
+            self.settings.persistent_keepalive,
+        )
+
+        lines = [
+            "[Interface]",
+            f"PrivateKey = {private_key}",
+            f"Address = {address}",
+        ]
+        if dns_value:
+            lines.append(f"DNS = {dns_value}")
+        lines.extend(
+            [
+                "",
+                "[Peer]",
+                f"PublicKey = {server_public_key}",
+                f"Endpoint = {endpoint}",
+                f"AllowedIPs = {allowed_ips}",
+            ]
+        )
+        if persistent_keepalive is not None:
+            lines.append(f"PersistentKeepalive = {persistent_keepalive}")
+        return "\n".join(lines) + "\n"
+
+    def _format_dns(self, value: object) -> str:
+        if value is None:
+            return ", ".join(self.settings.dns_servers)
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (list, tuple)):
+            return ", ".join(str(item) for item in value)
+        raise ValueError("WireGuard DNS value must be a string or a list of strings")
+
+    async def _run(
+        self,
+        command: tuple[str, ...],
+        *,
+        input_text: str | None = None,
+    ) -> CommandResult:
         if self.executor is None:
             raise RuntimeError("WireGuardProvider requires an executor")
-        return await self.executor.run(command)
+        return await self.executor.run(command, input_text=input_text)
 
     def _parse_peer_dump(self, stdout: str) -> list[WireGuardPeerDump]:
         rows = [line.split("\t") for line in stdout.splitlines() if line.strip()]

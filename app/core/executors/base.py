@@ -20,6 +20,7 @@ class BaseExecutor(ABC):
         timeout_seconds: int | None = None,
         cwd: Path | None = None,
         env: Mapping[str, str] | None = None,
+        input_text: str | None = None,
     ) -> CommandResult:
         """Execute a command and return its normalized result."""
 

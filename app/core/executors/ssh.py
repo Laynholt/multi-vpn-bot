@@ -39,6 +39,7 @@ class SSHExecutor(BaseExecutor):
         timeout_seconds: int | None = None,
         cwd: Path | None = None,
         env: Mapping[str, str] | None = None,
+        input_text: str | None = None,
     ) -> CommandResult:
         normalized_command = self.normalize_command(command)
         if cwd is not None:
@@ -81,7 +82,7 @@ class SSHExecutor(BaseExecutor):
         try:
             try:
                 completed = await asyncio.wait_for(
-                    connection.run(*normalized_command, check=False),
+                    connection.run(*normalized_command, input=input_text, check=False),
                     timeout=command_timeout,
                 )
             except TimeoutError as exc:

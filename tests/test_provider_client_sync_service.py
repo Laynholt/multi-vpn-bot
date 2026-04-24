@@ -15,7 +15,7 @@ from app.core.config.models import (
 from app.core.registry import RegisteredServer, ServerRegistry
 from app.domain.enums.common import ClientStatus
 from app.infrastructure.db import DatabaseManager
-from app.services.client_inventory import ClientInventoryService
+from app.services.client_inventory import ClientInventoryService, VpnClientSyncItem
 from app.services.provider_clients import ProviderClientSyncService
 
 
@@ -192,6 +192,49 @@ async def test_sync_provider_clients_syncs_only_selected_provider(
     assert [config.type for config, _executor in provider_factory.calls] == [
         ProviderType.WIREGUARD
     ]
+
+
+@pytest.mark.asyncio
+async def test_list_provider_clients_reads_inventory_for_enabled_provider(
+    database: DatabaseManager,
+) -> None:
+    inventory_service = ClientInventoryService(database)
+    await inventory_service.sync_provider_clients(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        clients=[VpnClientSyncItem(provider_client_id="peer-1", display_name="Alice")],
+    )
+    service = ProviderClientSyncService(
+        server_registry=_registry(),
+        executor_factory=FakeExecutorFactory(),
+        provider_factory=FakeProviderFactory(FakeProvider([])),
+        client_inventory_service=inventory_service,
+    )
+
+    clients = await service.list_provider_clients(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+    )
+
+    assert [client.provider_client_id for client in clients] == ["peer-1"]
+
+
+@pytest.mark.asyncio
+async def test_list_provider_clients_rejects_disabled_provider(
+    database: DatabaseManager,
+) -> None:
+    service = ProviderClientSyncService(
+        server_registry=_registry(),
+        executor_factory=FakeExecutorFactory(),
+        provider_factory=FakeProviderFactory(FakeProvider([])),
+        client_inventory_service=ClientInventoryService(database),
+    )
+
+    with pytest.raises(ValueError, match="Enabled provider '3xui' is not configured"):
+        await service.list_provider_clients(
+            server_key="vps-nl",
+            provider_type=ProviderType.X3UI,
+        )
 
 
 @pytest.mark.asyncio

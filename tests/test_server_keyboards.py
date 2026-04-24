@@ -94,3 +94,20 @@ def test_build_server_providers_keyboard_contains_provider_sync_callbacks() -> N
         in callbacks
     )
     assert all("3xui" not in callback for _text, callback in payloads)
+
+
+def test_build_server_providers_keyboard_contains_provider_list_callbacks() -> None:
+    markup = build_server_providers_keyboard(
+        server_key="vps-nl",
+        providers=(ProviderConfig(type=ProviderType.WIREGUARD),),
+    )
+
+    callbacks = {callback for _text, callback in _button_payloads(markup)}
+    assert (
+        ProviderClientActionCallback(
+            key="vps-nl",
+            provider=ProviderType.WIREGUARD,
+            action=ProviderClientAction.LIST,
+        ).pack()
+        in callbacks
+    )

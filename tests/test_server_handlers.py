@@ -49,6 +49,7 @@ class FakeHostActionsService:
 class FakeProviderClientSyncService:
     def __init__(self) -> None:
         self.sync_calls: list[tuple[str, ProviderType]] = []
+        self.list_calls: list[tuple[str, ProviderType]] = []
 
     async def sync_provider_clients(
         self,
@@ -62,6 +63,15 @@ class FakeProviderClientSyncService:
             provider_type=provider_type,
             clients=(),
         )
+
+    async def list_provider_clients(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+    ) -> tuple[object, ...]:
+        self.list_calls.append((server_key, provider_type))
+        return ()
 
 
 @dataclass
@@ -148,7 +158,7 @@ async def test_sync_provider_clients_renders_sync_result(monkeypatch: pytest.Mon
         config=SimpleNamespace(telegram=SimpleNamespace(max_message_length=4000)),
     )
 
-    await server_handlers.sync_provider_clients(
+    await server_handlers.handle_provider_client_action(
         callback,
         ProviderClientActionCallback(
             key="vps-nl",
@@ -163,3 +173,38 @@ async def test_sync_provider_clients_renders_sync_result(monkeypatch: pytest.Mon
         ("vps-nl", ProviderType.WIREGUARD)
     ]
     assert "Синхронизация клиентов" in sent[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_list_provider_clients_renders_inventory(monkeypatch: pytest.MonkeyPatch) -> None:
+    sent: list[dict[str, object]] = []
+
+    async def fake_send_or_edit_text(**kwargs) -> None:  # noqa: ANN003
+        sent.append(kwargs)
+
+    monkeypatch.setattr(server_handlers, "send_or_edit_text", fake_send_or_edit_text)
+
+    callback = FakeCallback()
+    provider_client_sync_service = FakeProviderClientSyncService()
+    context = FakeContext(
+        server_registry=ServerRegistry.from_config(load_config("configs/config.example.json")),
+        host_actions_service=FakeHostActionsService(),
+        provider_client_sync_service=provider_client_sync_service,
+        config=SimpleNamespace(telegram=SimpleNamespace(max_message_length=4000)),
+    )
+
+    await server_handlers.handle_provider_client_action(
+        callback,
+        ProviderClientActionCallback(
+            key="vps-nl",
+            provider=ProviderType.WIREGUARD,
+            action=ProviderClientAction.LIST,
+        ),
+        context,
+        UserRole.ADMIN,
+    )
+
+    assert provider_client_sync_service.list_calls == [
+        ("vps-nl", ProviderType.WIREGUARD)
+    ]
+    assert "Клиенты провайдера" in sent[0]["text"]

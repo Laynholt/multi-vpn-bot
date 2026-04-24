@@ -143,3 +143,48 @@ async def test_soft_deleted_clients_are_not_returned_for_user_by_default(
     assert (
         len(await service.list_clients_for_user(telegram_user_id=1001, include_deleted=True)) == 1
     )
+
+
+@pytest.mark.asyncio
+async def test_list_clients_for_provider_filters_identity_and_deleted(
+    database: DatabaseManager,
+) -> None:
+    service = ClientInventoryService(database)
+    await service.sync_provider_clients(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        clients=[
+            VpnClientSyncItem(provider_client_id="peer-1", display_name="Alice"),
+            VpnClientSyncItem(
+                provider_client_id="peer-deleted",
+                display_name="Deleted",
+                status=ClientStatus.DELETED,
+            ),
+        ],
+    )
+    await service.sync_provider_clients(
+        server_key="vps-de",
+        provider_type=ProviderType.WIREGUARD,
+        clients=[VpnClientSyncItem(provider_client_id="peer-2", display_name="Bob")],
+    )
+    await service.sync_provider_clients(
+        server_key="vps-nl",
+        provider_type=ProviderType.X3UI,
+        clients=[VpnClientSyncItem(provider_client_id="x3ui-1", display_name="Carol")],
+    )
+
+    active_clients = await service.list_clients_for_provider(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+    )
+    all_clients = await service.list_clients_for_provider(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        include_deleted=True,
+    )
+
+    assert [client.provider_client_id for client in active_clients] == ["peer-1"]
+    assert [client.provider_client_id for client in all_clients] == [
+        "peer-1",
+        "peer-deleted",
+    ]

@@ -122,3 +122,24 @@ class VpnClientRepository:
 
         result = await self._session.execute(query)
         return list(result.scalars().all())
+
+    async def list_by_provider(
+        self,
+        *,
+        server_key: str,
+        provider_type: str,
+        include_deleted: bool = False,
+    ) -> list[VpnClientORM]:
+        query = (
+            select(VpnClientORM)
+            .where(
+                VpnClientORM.server_key == server_key,
+                VpnClientORM.provider_type == provider_type,
+            )
+            .order_by(VpnClientORM.display_name, VpnClientORM.provider_client_id)
+        )
+        if not include_deleted:
+            query = query.where(VpnClientORM.status != ClientStatus.DELETED.value)
+
+        result = await self._session.execute(query)
+        return list(result.scalars().all())

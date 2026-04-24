@@ -4,8 +4,10 @@ from __future__ import annotations
 
 from html import escape
 
+from app.core.config.models import ProviderType
 from app.core.registry import RegisteredServer, ServerRegistry
 from app.providers import BaseProvider
+from app.services.client_inventory import VpnClientSnapshot
 from app.services.host_actions import HostActionDefinition, HostActionExecution
 from app.services.provider_clients import ProviderClientSyncResult
 
@@ -183,4 +185,34 @@ def render_provider_client_sync_result(result: ProviderClientSyncResult) -> str:
             )
         if len(result.clients) > 10:
             lines.append(f"... and {len(result.clients) - 10} more")
+    return "\n".join(lines)
+
+
+def render_provider_clients_list(
+    *,
+    server_key: str,
+    provider_type: ProviderType,
+    clients: tuple[VpnClientSnapshot, ...],
+) -> str:
+    lines = [
+        "Клиенты провайдера",
+        "",
+        f"server: <code>{escape(server_key)}</code>",
+        f"provider: <code>{escape(provider_type.value)}</code>",
+        f"clients: {len(clients)}",
+    ]
+    if not clients:
+        lines.extend(["", "В inventory пока нет клиентов. Запустите синхронизацию."])
+        return "\n".join(lines)
+
+    lines.append("")
+    for client in clients[:20]:
+        users = ", ".join(str(user_id) for user_id in client.telegram_user_ids) or "-"
+        lines.append(
+            f"- {escape(client.display_name)} · "
+            f"<code>{escape(client.provider_client_id)}</code> · "
+            f"{client.status.value} · users: {escape(users)}"
+        )
+    if len(clients) > 20:
+        lines.append(f"... and {len(clients) - 20} more")
     return "\n".join(lines)

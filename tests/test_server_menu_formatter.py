@@ -5,6 +5,7 @@ from datetime import datetime
 from app.bot.formatters import (
     render_host_action_result,
     render_provider_client_sync_result,
+    render_provider_clients_list,
     render_server_card_text,
     render_server_list_text,
     render_server_providers_text,
@@ -155,3 +156,58 @@ def test_render_provider_client_sync_result_summarizes_clients() -> None:
     assert "wireguard" in text
     assert "1 clients" in text
     assert "&lt;Alice&gt;" in text
+
+
+def test_render_provider_clients_list_escapes_and_summarizes_clients() -> None:
+    now = datetime(2026, 1, 1)
+    clients = (
+        VpnClientSnapshot(
+            id=1,
+            provider_type=ProviderType.WIREGUARD,
+            server_key="srv-html",
+            provider_client_id="peer-1",
+            display_name="<Alice>",
+            status=ClientStatus.ACTIVE,
+            metadata={},
+            telegram_user_ids=(1001,),
+            created_at=now,
+            updated_at=now,
+        ),
+        VpnClientSnapshot(
+            id=2,
+            provider_type=ProviderType.WIREGUARD,
+            server_key="srv-html",
+            provider_client_id="peer-2",
+            display_name="Bob",
+            status=ClientStatus.DISABLED,
+            metadata={},
+            telegram_user_ids=(),
+            created_at=now,
+            updated_at=now,
+        ),
+    )
+
+    text = render_provider_clients_list(
+        server_key="srv-html",
+        provider_type=ProviderType.WIREGUARD,
+        clients=clients,
+    )
+
+    assert "Клиенты провайдера" in text
+    assert "<code>srv-html</code>" in text
+    assert "wireguard" in text
+    assert "&lt;Alice&gt;" in text
+    assert "users: 1001" in text
+    assert "Bob" in text
+    assert "disabled" in text
+
+
+def test_render_provider_clients_list_handles_empty_clients() -> None:
+    text = render_provider_clients_list(
+        server_key="srv-html",
+        provider_type=ProviderType.WIREGUARD,
+        clients=(),
+    )
+
+    assert "Клиенты провайдера" in text
+    assert "В inventory пока нет клиентов" in text

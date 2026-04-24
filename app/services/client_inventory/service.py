@@ -111,6 +111,28 @@ class ClientInventoryService:
                 snapshots.append(self._to_snapshot(client, telegram_user_ids))
             return snapshots
 
+    async def list_clients_for_provider(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+        include_deleted: bool = False,
+    ) -> list[VpnClientSnapshot]:
+        async with self._database.session() as session:
+            from app.infrastructure.db.repositories import VpnClientRepository
+
+            repository = VpnClientRepository(session)
+            clients = await repository.list_by_provider(
+                server_key=server_key,
+                provider_type=provider_type.value,
+                include_deleted=include_deleted,
+            )
+            snapshots: list[VpnClientSnapshot] = []
+            for client in clients:
+                telegram_user_ids = await repository.list_linked_user_ids(client.id)
+                snapshots.append(self._to_snapshot(client, telegram_user_ids))
+            return snapshots
+
     def _to_snapshot(
         self,
         client: VpnClientORM,

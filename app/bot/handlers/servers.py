@@ -19,6 +19,7 @@ from app.bot.formatters import (
     render_host_action_error,
     render_host_action_result,
     render_provider_client_sync_result,
+    render_provider_clients_list,
     render_server_card_text,
     render_server_info_text,
     render_server_list_text,
@@ -145,13 +146,37 @@ async def run_host_action(
 
 
 @router.callback_query(ProviderClientActionCallback.filter())
-async def sync_provider_clients(
+async def handle_provider_client_action(
     callback: CallbackQuery,
     callback_data: ProviderClientActionCallback,
     app_context: ApplicationContext,
     user_role: UserRole,
 ) -> None:
     if not await _ensure_admin(callback, user_role):
+        return
+
+    if callback_data.action == ProviderClientAction.LIST:
+        try:
+            clients = await app_context.provider_client_sync_service.list_provider_clients(
+                server_key=callback_data.key,
+                provider_type=callback_data.provider,
+            )
+            text = render_provider_clients_list(
+                server_key=callback_data.key,
+                provider_type=callback_data.provider,
+                clients=clients,
+            )
+        except Exception as exc:
+            text = render_host_action_error(
+                server_key=callback_data.key,
+                action_key=f"{callback_data.provider.value}:{callback_data.action.value}",
+                error=exc,
+            )
+        await send_or_edit_text(
+            event=callback,
+            text=text,
+            reply_markup=build_server_back_keyboard(server_key=callback_data.key),
+        )
         return
 
     if callback_data.action != ProviderClientAction.SYNC:

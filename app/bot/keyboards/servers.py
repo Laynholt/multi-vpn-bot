@@ -106,6 +106,14 @@ def build_server_providers_keyboard(
         if not provider.enabled:
             continue
         builder.button(
+            text=f"Клиенты {provider.type.value}",
+            callback_data=ProviderClientActionCallback(
+                key=server_key,
+                provider=provider.type,
+                action=ProviderClientAction.LIST,
+            ).pack(),
+        )
+        builder.button(
             text=f"Синхронизировать {provider.type.value}",
             callback_data=ProviderClientActionCallback(
                 key=server_key,

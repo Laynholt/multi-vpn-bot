@@ -84,6 +84,20 @@ class ProviderClientSyncService:
             executor=executor,
         )
 
+    async def list_provider_clients(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+    ) -> tuple[VpnClientSnapshot, ...]:
+        server = self._server_registry.get(server_key)
+        self._get_enabled_provider_config(server, provider_type)
+        clients = await self._client_inventory_service.list_clients_for_provider(
+            server_key=server.key,
+            provider_type=provider_type,
+        )
+        return tuple(clients)
+
     async def create_client(
         self,
         *,

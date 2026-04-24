@@ -6,7 +6,7 @@ import shlex
 from dataclasses import dataclass
 from datetime import date
 
-from aiogram import F, Router
+from aiogram import Bot, F, Router
 from aiogram.types import BufferedInputFile, CallbackQuery, Message
 
 from app.bot.callbacks import (
@@ -17,6 +17,7 @@ from app.bot.callbacks import (
     MenuActionCallback,
 )
 from app.bot.formatters import (
+    render_admin_config_delivery_result,
     render_admin_traffic_summary,
     render_admin_user_card,
     render_admin_users_page,
@@ -33,11 +34,20 @@ from app.bot.user_admin_actions import AdminUserAction
 from app.context import ApplicationContext
 from app.core.config.models import ProviderType
 from app.core.permissions import UserRole
+from app.infrastructure.logging import get_audit_logger
+from app.services.config_delivery import ConfigDeliveryFile, ConfigDeliveryResult
 from app.services.traffic_stats import TrafficAdminDailySummary
 
 router = Router(name="admin-users")
+audit_logger = get_audit_logger()
 
 MAX_ADMIN_TRAFFIC_CSV_ROWS = 10_000
+
+
+@dataclass(frozen=True, slots=True)
+class AdminConfigDeliveryQuery:
+    target_user_id: int
+    vpn_client_id: int | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +58,10 @@ class AdminTrafficStatsQuery:
     vpn_client_id: int | None = None
     date_from: date | None = None
     date_to: date | None = None
+
+
+def _admin_user_id(message: Message) -> int | None:
+    return message.from_user.id if message.from_user is not None else None
 
 
 async def _ensure_admin(callback: CallbackQuery, user_role: UserRole) -> bool:
@@ -84,8 +98,45 @@ async def _send_message_traffic_csv(
     )
 
 
+async def _send_config_delivery_files(
+    *,
+    bot: Bot,
+    target_user_id: int,
+    files: tuple[ConfigDeliveryFile, ...],
+) -> None:
+    for item in files:
+        await bot.send_document(
+            chat_id=target_user_id,
+            document=BufferedInputFile(item.content, filename=item.filename),
+            caption=f"VPN config: {item.display_name}",
+        )
+
+
 def _normalize_optional(value: str) -> str | None:
     return None if value.lower() in {"all", "-", "none"} else value
+
+
+def _parse_admin_config_delivery_query(text: str) -> AdminConfigDeliveryQuery:
+    parts = shlex.split(text)
+    values: dict[str, str] = {}
+    allowed_keys = {"user", "chat", "client"}
+    for part in parts[1:]:
+        if "=" not in part:
+            raise ValueError("Usage: /send_config user=<telegram_id> [client=<vpn_client_id>]")
+        key, value = part.split("=", 1)
+        if key not in allowed_keys:
+            raise ValueError(f"Unknown argument: {key}")
+        values[key] = value
+
+    target_user_value = values.get("user") or values.get("chat")
+    if target_user_value is None:
+        raise ValueError("Usage: /send_config user=<telegram_id> [client=<vpn_client_id>]")
+
+    client_value = values.get("client")
+    return AdminConfigDeliveryQuery(
+        target_user_id=int(target_user_value),
+        vpn_client_id=int(client_value) if client_value is not None else None,
+    )
 
 
 def _parse_admin_traffic_stats_query(text: str) -> AdminTrafficStatsQuery:
@@ -131,6 +182,22 @@ async def _load_admin_traffic_summary(
         date_from=query.date_from,
         date_to=query.date_to,
     )
+
+
+async def _load_admin_config_delivery_result(
+    *,
+    app_context: ApplicationContext,
+    query: AdminConfigDeliveryQuery,
+) -> ConfigDeliveryResult:
+    if query.vpn_client_id is None:
+        return await app_context.config_delivery_service.list_user_config_files(
+            telegram_user_id=query.target_user_id,
+        )
+
+    config_file = await app_context.config_delivery_service.export_client_config_file(
+        vpn_client_id=query.vpn_client_id,
+    )
+    return ConfigDeliveryResult(files=(config_file,), errors=())
 
 
 @router.callback_query(MenuActionCallback.filter(F.section == MenuSection.ADMIN))
@@ -233,6 +300,44 @@ async def open_admin_traffic_stats_command(
         text = render_admin_traffic_summary(summary)
     except Exception as exc:
         text = f"Не удалось построить статистику: {exc}"
+
+    await send_or_edit_text(event=message, text=text)
+
+
+@router.message(F.text.startswith("/send_config"))
+async def send_config_command(
+    message: Message,
+    app_context: ApplicationContext,
+    user_role: UserRole,
+) -> None:
+    if user_role != UserRole.ADMIN:
+        return
+
+    try:
+        query = _parse_admin_config_delivery_query(message.text or "")
+        if message.bot is None:
+            raise RuntimeError("Telegram bot is unavailable")
+        result = await _load_admin_config_delivery_result(app_context=app_context, query=query)
+        await _send_config_delivery_files(
+            bot=message.bot,
+            target_user_id=query.target_user_id,
+            files=result.files,
+        )
+        audit_logger.info(
+            "admin_config_delivery admin_id=%s target_user_id=%s vpn_client_id=%s "
+            "files=%s errors=%s",
+            _admin_user_id(message),
+            query.target_user_id,
+            query.vpn_client_id,
+            len(result.files),
+            len(result.errors),
+        )
+        text = render_admin_config_delivery_result(
+            target_user_id=query.target_user_id,
+            result=result,
+        )
+    except Exception as exc:
+        text = f"Не удалось выдать конфиги: {exc}"
 
     await send_or_edit_text(event=message, text=text)
 

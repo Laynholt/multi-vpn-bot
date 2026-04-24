@@ -156,3 +156,47 @@ async def test_list_user_config_files_reports_export_errors(
     assert len(result.errors) == 1
     assert result.errors[0].provider_client_id == "peer-1"
     assert "Enabled provider" in result.errors[0].message
+
+
+@pytest.mark.asyncio
+async def test_export_client_config_file_exports_selected_client(
+    database: DatabaseManager,
+) -> None:
+    inventory_service = ClientInventoryService(database)
+    clients = await inventory_service.sync_provider_clients(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        clients=[
+            VpnClientSyncItem(provider_client_id="peer-1", display_name="Alice Phone"),
+            VpnClientSyncItem(provider_client_id="peer-2", display_name="Bob Laptop"),
+        ],
+    )
+    provider = FakeProvider({"peer-2": b"[Interface]\nPrivateKey = yyy\n"})
+    service = ConfigDeliveryService(
+        server_registry=_registry(),
+        executor_factory=FakeExecutorFactory(),
+        provider_factory=FakeProviderFactory(provider),
+        client_inventory_service=inventory_service,
+    )
+
+    config_file = await service.export_client_config_file(vpn_client_id=clients[1].id)
+
+    assert config_file.provider_client_id == "peer-2"
+    assert config_file.filename == "vps-nl_wireguard_Bob_Laptop.conf"
+    assert config_file.content == b"[Interface]\nPrivateKey = yyy\n"
+    assert provider.export_calls == ["peer-2"]
+
+
+@pytest.mark.asyncio
+async def test_export_client_config_file_reports_missing_client(
+    database: DatabaseManager,
+) -> None:
+    service = ConfigDeliveryService(
+        server_registry=_registry(),
+        executor_factory=FakeExecutorFactory(),
+        provider_factory=FakeProviderFactory(FakeProvider({})),
+        client_inventory_service=ClientInventoryService(database),
+    )
+
+    with pytest.raises(ValueError, match="VPN client 404 does not exist"):
+        await service.export_client_config_file(vpn_client_id=404)

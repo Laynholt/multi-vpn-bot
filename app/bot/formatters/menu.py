@@ -134,6 +134,48 @@ def render_user_configs_result(result: ConfigDeliveryResult) -> str:
     return "\n".join(lines)
 
 
+def render_admin_config_delivery_result(
+    *,
+    target_user_id: int,
+    result: ConfigDeliveryResult,
+) -> str:
+    if not result.files and not result.errors:
+        return "\n".join(
+            [
+                "Выдача конфигов",
+                "",
+                f"Получатель: <code>{target_user_id}</code>",
+                "Привязанные VPN-клиенты не найдены.",
+            ]
+        )
+
+    lines = [
+        "Выдача конфигов",
+        "",
+        f"Получатель: <code>{target_user_id}</code>",
+        f"Отправлено: {len(result.files)}",
+        f"Ошибок: {len(result.errors)}",
+    ]
+    if result.files:
+        lines.append("")
+        lines.append("Отправленные файлы:")
+        for item in result.files:
+            lines.append(
+                f"- {escape(item.display_name)} "
+                f"(<code>{escape(item.server_key)}</code>, "
+                f"<code>{escape(item.provider_type.value)}</code>)"
+            )
+    if result.errors:
+        lines.append("")
+        lines.append("Не удалось получить:")
+        for error in result.errors:
+            lines.append(
+                f"- {escape(error.display_name)} "
+                f"(<code>{escape(error.server_key)}</code>): {escape(error.message)}"
+            )
+    return "\n".join(lines)
+
+
 def _format_bytes(value: int) -> str:
     units = ("B", "KiB", "MiB", "GiB", "TiB")
     amount = float(value)

@@ -6,6 +6,7 @@ from app.bot.formatters.admin_users import (
     render_admin_users_page,
 )
 from app.bot.formatters.menu import (
+    render_admin_config_delivery_result,
     render_config_request_admin_text,
     render_config_request_prompt,
     render_config_request_submitted,
@@ -31,6 +32,7 @@ from app.bot.formatters.servers import (
 )
 
 __all__ = [
+    "render_admin_config_delivery_result",
     "render_admin_user_card",
     "render_admin_users_page",
     "render_admin_traffic_summary",

@@ -80,6 +80,12 @@ class ConfigDeliveryService:
 
         return ConfigDeliveryResult(files=tuple(files), errors=tuple(errors))
 
+    async def export_client_config_file(self, *, vpn_client_id: int) -> ConfigDeliveryFile:
+        client = await self._client_inventory_service.get_client(vpn_client_id)
+        if client is None:
+            raise ValueError(f"VPN client {vpn_client_id} does not exist")
+        return await self._export_client_config(client)
+
     async def _export_client_config(
         self,
         client: VpnClientSnapshot,

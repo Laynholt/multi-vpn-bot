@@ -1,12 +1,19 @@
 from app.bot.formatters import (
+    render_admin_config_delivery_result,
     render_config_request_admin_text,
     render_config_request_prompt,
     render_config_request_submitted,
     render_home_text,
 )
 from app.core.config import load_config
+from app.core.config.models import ProviderType
 from app.core.permissions import UserRole
 from app.core.registry import ServerRegistry
+from app.services.config_delivery import (
+    ConfigDeliveryError,
+    ConfigDeliveryFile,
+    ConfigDeliveryResult,
+)
 
 
 def test_render_home_text_includes_role_and_server_count() -> None:
@@ -47,3 +54,47 @@ def test_render_config_request_admin_text_escapes_user_and_comment() -> None:
     assert "&lt;alice&gt;" in text
     assert "Alice &amp; Bob" in text
     assert "&lt;phone &amp; laptop&gt;" in text
+
+
+def test_render_admin_config_delivery_result_summarizes_files_and_errors() -> None:
+    text = render_admin_config_delivery_result(
+        target_user_id=1001,
+        result=ConfigDeliveryResult(
+            files=(
+                ConfigDeliveryFile(
+                    filename="alice.conf",
+                    content=b"config",
+                    server_key="vps<nl>",
+                    provider_type=ProviderType.WIREGUARD,
+                    provider_client_id="peer-1",
+                    display_name="Alice & Phone",
+                ),
+            ),
+            errors=(
+                ConfigDeliveryError(
+                    server_key="vps-de",
+                    provider_type=ProviderType.WIREGUARD,
+                    provider_client_id="peer-2",
+                    display_name="Bob <Laptop>",
+                    message="provider disabled",
+                ),
+            ),
+        ),
+    )
+
+    assert "Выдача конфигов" in text
+    assert "<code>1001</code>" in text
+    assert "Отправлено: 1" in text
+    assert "Ошибок: 1" in text
+    assert "Alice &amp; Phone" in text
+    assert "vps&lt;nl&gt;" in text
+    assert "Bob &lt;Laptop&gt;" in text
+
+
+def test_render_admin_config_delivery_result_handles_empty_result() -> None:
+    text = render_admin_config_delivery_result(
+        target_user_id=1001,
+        result=ConfigDeliveryResult(files=(), errors=()),
+    )
+
+    assert "Привязанные VPN-клиенты не найдены." in text

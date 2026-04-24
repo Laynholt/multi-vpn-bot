@@ -1,0 +1,84 @@
+{
+  "config_version": 1,
+  "logging": {
+    "logs_dir": "stuff/logs",
+    "base_log_filename": "telegram_bot",
+    "max_log_length": 5000,
+    "level": "INFO"
+  },
+  "telegram": {
+    "token_env": "TELEGRAM_BOT_TOKEN",
+    "admin_ids": [111111111],
+    "max_concurrent_messages": 5,
+    "max_message_length": 4000,
+    "ui_mode": "inline",
+    "system_monitor": {
+      "enabled": true,
+      "interval_seconds": 60,
+      "cpu_threshold_percent": 90.0,
+      "cpu_duration_minutes": 3,
+      "ram_threshold_percent": 90.0,
+      "ram_duration_minutes": 3
+    }
+  },
+  "database": {
+    "sqlite_path": "stuff/multivpn.db"
+  },
+  "transports": {
+    "local": {
+      "enabled": true
+    },
+    "ssh": {
+      "enabled": true,
+      "use_system_ssh_config": true,
+      "connect_timeout_seconds": 10,
+      "command_timeout_seconds": 30
+    }
+  },
+  "statistics": {
+    "enabled": true,
+    "collect_interval_minutes": 15,
+    "store_raw_samples": true,
+    "daily_rollup_timezone": "Europe/Moscow",
+    "csv_delimiter": ","
+  },
+  "servers": [
+    {
+      "key": "vps-nl",
+      "title": "Нидерланды",
+      "enabled": true,
+      "connection": {
+        "mode": "ssh",
+        "ssh_alias": "vps-nl"
+      },
+      "host_actions": {
+        "server_status": true,
+        "speedtest": true,
+        "vnstat_week": true,
+        "healthcheck": true
+      },
+      "providers": [
+        {
+          "type": "wireguard",
+          "enabled": true,
+          "settings": {
+            "wireguard_interface": "wg0",
+            "wireguard_config_filepath": "/etc/wireguard/wg0.conf"
+          }
+        }
+      ],
+      "ui": {
+        "icon": "🛡",
+        "sort_order": 10
+      }
+    }
+  ],
+  "features": {
+    "broadcasts_enabled": true,
+    "csv_export_enabled": true,
+    "user_config_request_enabled": true
+  },
+  "defaults": {
+    "speedtest_timeout_seconds": 180
+  }
+}

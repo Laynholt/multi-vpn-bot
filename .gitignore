@@ -1,0 +1,27 @@
+# Environment
+.venv
+bot_env/
+
+# Python
+__pycache__/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+tmp_pytest/
+tmp_pytest_cache/
+
+# Editor
+.vscode/
+
+# Data
+*.db
+configs/config.json
+
+# Project folders
+docs/
+stuff/
+
+# Other
+swap-pane
+uv.lock

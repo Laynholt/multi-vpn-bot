@@ -4,7 +4,7 @@
 
 Текущее состояние:
 
-- реализованы этапы 0-10 из `docs/IMPLEMENTATION_TASKS.md` в базовом виде;
+- реализованы этапы 0-13 из `docs/IMPLEMENTATION_TASKS.md` в базовом виде;
 - собран базовый каркас проекта;
 - добавлены строгие pydantic-модели JSON-конфига;
 - добавлены базовое логирование и безопасный bootstrap;
@@ -12,7 +12,9 @@
 - подключён `aiogram` runtime, inline-меню, роли, авто-регистрация пользователей
   и пересылка сообщений администраторам;
 - добавлены `ServerRegistry`, executor layer, host actions и админский Telegram UI
-  для просмотра серверов и запуска системных действий.
+  для просмотра серверов и запуска системных действий;
+- добавлены provider base layer, unified client inventory и traffic statistics layer
+  с raw samples, delta calculation и daily aggregates.
 
 ## Быстрый старт
 
@@ -43,6 +45,10 @@ python -m app.main --config configs/config.json
 - `app/core/registry`: базовый `ServerRegistry` поверх enabled-серверов;
 - `app/core/executors`: единый local/SSH executor contract;
 - `app/services/host_actions`: запуск системных действий независимо от провайдеров;
+- `app/services/client_inventory`: единый реестр VPN-клиентов и связи с Telegram users;
+- `app/services/traffic_stats`: нормализация статистики, raw samples,
+  delta calculation и дневные агрегаты;
+- `app/providers`: базовый provider contract, capabilities, factory и registry;
 - `app/bot`: aiogram runtime, inline navigation, admin user management,
   message bridge и server UI;
 - `app/main.py`: bootstrap конфига, логирования, БД, registry и Telegram runtime.
@@ -53,6 +59,6 @@ python -m app.main --config configs/config.json
 
 ## Следующий шаг
 
-Следующий логичный блок — `Provider base layer`: общий контракт провайдеров,
-capabilities и подготовка инвентаризации VPN-клиентов без привязки к конкретному
-WireGuard или 3xUI backend.
+Следующий логичный блок — `WireGuard provider`: реальная интеграция со списком
+clients, peer stats, выдачей конфигов и передачей статистики в unified traffic
+statistics layer.

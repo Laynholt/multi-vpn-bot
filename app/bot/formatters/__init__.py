@@ -2,6 +2,9 @@
 
 from app.bot.formatters.admin_users import render_admin_user_card, render_admin_users_page
 from app.bot.formatters.menu import (
+    render_config_request_admin_text,
+    render_config_request_prompt,
+    render_config_request_submitted,
     render_home_text,
     render_section_text,
     render_user_configs_result,
@@ -26,6 +29,9 @@ from app.bot.formatters.servers import (
 __all__ = [
     "render_admin_user_card",
     "render_admin_users_page",
+    "render_config_request_admin_text",
+    "render_config_request_prompt",
+    "render_config_request_submitted",
     "render_host_action_error",
     "render_host_action_result",
     "render_home_text",

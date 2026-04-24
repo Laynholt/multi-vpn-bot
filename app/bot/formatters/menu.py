@@ -170,3 +170,49 @@ def render_user_stats_summary(summary: TrafficUserDailySummary) -> str:
             f"{_format_bytes(client.total_bytes)}"
         )
     return "\n".join(lines)
+
+
+def render_config_request_prompt() -> str:
+    return "\n".join(
+        [
+            "Запросить конфиг",
+            "",
+            "Опишите, для какого устройства или сервера нужен VPN-доступ.",
+            "Следующее сообщение будет отправлено администраторам как заявка.",
+        ]
+    )
+
+
+def render_config_request_submitted(*, admin_count: int) -> str:
+    return "\n".join(
+        [
+            "Заявка отправлена администраторам.",
+            f"Получателей: {admin_count}.",
+        ]
+    )
+
+
+def render_config_request_admin_text(
+    *,
+    telegram_user_id: int,
+    username: str | None,
+    full_name: str | None,
+    comment: str,
+) -> str:
+    lines = [
+        "Заявка на конфиг",
+        "",
+        f"Telegram ID: <code>{telegram_user_id}</code>",
+    ]
+    if username:
+        lines.append(f"Username: @{escape(username)}")
+    if full_name:
+        lines.append(f"Имя: {escape(full_name)}")
+    lines.extend(
+        [
+            "",
+            "Комментарий:",
+            escape(comment),
+        ]
+    )
+    return "\n".join(lines)

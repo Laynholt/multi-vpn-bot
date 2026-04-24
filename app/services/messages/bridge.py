@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 from aiogram import Bot
 from aiogram.types import Message
 
+from app.bot.formatters import render_config_request_admin_text
 from app.core.config.models import TelegramConfig
 from app.core.permissions import AccessService
 from app.infrastructure.db import DatabaseManager
 from app.infrastructure.db.repositories import MessageLinkRepository
 from app.infrastructure.logging import get_logger
+
+if TYPE_CHECKING:
+    from app.services.users import TelegramUserSnapshot
 
 
 class MessageBridgeService:
@@ -60,6 +66,37 @@ class MessageBridgeService:
             "Forwarded message %s from user %s to %s admins",
             message.message_id,
             message.from_user.id,
+            forwarded_count,
+        )
+        return forwarded_count
+
+    async def forward_config_request(
+        self,
+        *,
+        bot: Bot,
+        telegram_user: TelegramUserSnapshot,
+        comment: str,
+    ) -> int:
+        full_name = " ".join(
+            part
+            for part in (telegram_user.first_name, telegram_user.last_name)
+            if part
+        )
+        text = render_config_request_admin_text(
+            telegram_user_id=telegram_user.telegram_user_id,
+            username=telegram_user.username,
+            full_name=full_name or None,
+            comment=comment,
+        )
+
+        forwarded_count = 0
+        for admin_id in self._admin_ids:
+            await bot.send_message(admin_id, text)
+            forwarded_count += 1
+
+        self._logger.info(
+            "Forwarded config request from user %s to %s admins",
+            telegram_user.telegram_user_id,
             forwarded_count,
         )
         return forwarded_count

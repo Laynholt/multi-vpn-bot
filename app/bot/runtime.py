@@ -5,6 +5,7 @@ from __future__ import annotations
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 
 from app.bot.handlers import create_root_router
@@ -14,7 +15,7 @@ from app.infrastructure.logging import get_logger
 
 
 def build_dispatcher(*, app_context: ApplicationContext) -> Dispatcher:
-    dispatcher = Dispatcher()
+    dispatcher = Dispatcher(storage=MemoryStorage())
     middleware = ContextMiddleware(
         app_context=app_context,
         access_service=app_context.access_service,

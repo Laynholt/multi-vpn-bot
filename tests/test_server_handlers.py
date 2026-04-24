@@ -9,6 +9,8 @@ from app.bot.callbacks import (
     HostActionCallback,
     ProviderClientAction,
     ProviderClientActionCallback,
+    ProviderClientItemAction,
+    ProviderClientItemActionCallback,
     ServerSelectCallback,
 )
 from app.bot.handlers import servers as server_handlers
@@ -50,6 +52,8 @@ class FakeProviderClientSyncService:
     def __init__(self) -> None:
         self.sync_calls: list[tuple[str, ProviderType]] = []
         self.list_calls: list[tuple[str, ProviderType]] = []
+        self.get_calls: list[tuple[str, ProviderType, int]] = []
+        self.delete_calls: list[tuple[str, ProviderType, int]] = []
 
     async def sync_provider_clients(
         self,
@@ -72,6 +76,41 @@ class FakeProviderClientSyncService:
     ) -> tuple[object, ...]:
         self.list_calls.append((server_key, provider_type))
         return ()
+
+    async def get_provider_client(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+        vpn_client_id: int,
+    ) -> object:
+        self.get_calls.append((server_key, provider_type, vpn_client_id))
+        return SimpleNamespace(
+            id=vpn_client_id,
+            server_key=server_key,
+            provider_type=provider_type,
+            provider_client_id="peer-1",
+            display_name="Alice",
+            status=SimpleNamespace(value="active"),
+            telegram_user_ids=(),
+        )
+
+    async def delete_inventory_client(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+        vpn_client_id: int,
+    ) -> object:
+        self.delete_calls.append((server_key, provider_type, vpn_client_id))
+        return SimpleNamespace(
+            provider_client_id="peer-1",
+            sync_result=SimpleNamespace(
+                server_key=server_key,
+                provider_type=provider_type,
+                clients=(),
+            ),
+        )
 
 
 @dataclass
@@ -208,3 +247,79 @@ async def test_list_provider_clients_renders_inventory(monkeypatch: pytest.Monke
         ("vps-nl", ProviderType.WIREGUARD)
     ]
     assert "Клиенты провайдера" in sent[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_delete_provider_client_renders_confirmation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, object]] = []
+
+    async def fake_send_or_edit_text(**kwargs) -> None:  # noqa: ANN003
+        sent.append(kwargs)
+
+    monkeypatch.setattr(server_handlers, "send_or_edit_text", fake_send_or_edit_text)
+
+    callback = FakeCallback()
+    provider_client_sync_service = FakeProviderClientSyncService()
+    context = FakeContext(
+        server_registry=ServerRegistry.from_config(load_config("configs/config.example.json")),
+        host_actions_service=FakeHostActionsService(),
+        provider_client_sync_service=provider_client_sync_service,
+        config=SimpleNamespace(telegram=SimpleNamespace(max_message_length=4000)),
+    )
+
+    await server_handlers.handle_provider_client_item_action(
+        callback,
+        ProviderClientItemActionCallback(
+            key="vps-nl",
+            provider=ProviderType.WIREGUARD,
+            client_id=12,
+            action=ProviderClientItemAction.DELETE,
+        ),
+        context,
+        UserRole.ADMIN,
+    )
+
+    assert provider_client_sync_service.get_calls == [
+        ("vps-nl", ProviderType.WIREGUARD, 12)
+    ]
+    assert "Подтвердите удаление клиента" in sent[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_confirm_delete_provider_client_runs_service(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, object]] = []
+
+    async def fake_send_or_edit_text(**kwargs) -> None:  # noqa: ANN003
+        sent.append(kwargs)
+
+    monkeypatch.setattr(server_handlers, "send_or_edit_text", fake_send_or_edit_text)
+
+    callback = FakeCallback()
+    provider_client_sync_service = FakeProviderClientSyncService()
+    context = FakeContext(
+        server_registry=ServerRegistry.from_config(load_config("configs/config.example.json")),
+        host_actions_service=FakeHostActionsService(),
+        provider_client_sync_service=provider_client_sync_service,
+        config=SimpleNamespace(telegram=SimpleNamespace(max_message_length=4000)),
+    )
+
+    await server_handlers.handle_provider_client_item_action(
+        callback,
+        ProviderClientItemActionCallback(
+            key="vps-nl",
+            provider=ProviderType.WIREGUARD,
+            client_id=12,
+            action=ProviderClientItemAction.CONFIRM_DELETE,
+        ),
+        context,
+        UserRole.ADMIN,
+    )
+
+    assert provider_client_sync_service.delete_calls == [
+        ("vps-nl", ProviderType.WIREGUARD, 12)
+    ]
+    assert "Клиент удалён" in sent[0]["text"]

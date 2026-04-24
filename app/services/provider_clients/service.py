@@ -98,6 +98,43 @@ class ProviderClientSyncService:
         )
         return tuple(clients)
 
+    async def get_provider_client(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+        vpn_client_id: int,
+    ) -> VpnClientSnapshot:
+        server = self._server_registry.get(server_key)
+        self._get_enabled_provider_config(server, provider_type)
+        client = await self._client_inventory_service.get_client(vpn_client_id)
+        if client is None:
+            raise ValueError(f"VPN client {vpn_client_id} does not exist")
+        if client.server_key != server.key or client.provider_type != provider_type:
+            raise ValueError(
+                f"VPN client {vpn_client_id} does not belong to "
+                f"{server.key!r}/{provider_type.value!r}"
+            )
+        return client
+
+    async def delete_inventory_client(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+        vpn_client_id: int,
+    ) -> ProviderClientDeleteResult:
+        client = await self.get_provider_client(
+            server_key=server_key,
+            provider_type=provider_type,
+            vpn_client_id=vpn_client_id,
+        )
+        return await self.delete_client(
+            server_key=server_key,
+            provider_type=provider_type,
+            provider_client_id=client.provider_client_id,
+        )
+
     async def create_client(
         self,
         *,
@@ -135,6 +172,11 @@ class ProviderClientSyncService:
         provider = self._provider_factory.create(provider_config, executor=executor)
 
         await provider.delete_client(provider_client_id)
+        await self._client_inventory_service.mark_provider_client_deleted(
+            server_key=server.key,
+            provider_type=provider_config.type,
+            provider_client_id=provider_client_id,
+        )
         sync_result = await self._sync_provider_clients(
             server=server,
             provider_config=provider_config,

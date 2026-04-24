@@ -38,3 +38,15 @@ class ProviderClientActionCallback(CallbackData, prefix="pcli"):
     key: str
     provider: ProviderType
     action: ProviderClientAction
+
+
+class ProviderClientItemAction(StrEnum):
+    DELETE = "del"
+    CONFIRM_DELETE = "cdel"
+
+
+class ProviderClientItemActionCallback(CallbackData, prefix="pcitem"):
+    key: str
+    provider: ProviderType
+    client_id: int
+    action: ProviderClientItemAction

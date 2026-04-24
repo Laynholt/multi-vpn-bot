@@ -314,3 +314,68 @@ async def test_delete_client_syncs_provider_inventory_after_action(
     assert provider.delete_calls == ["peer-1"]
     assert result.provider_client_id == "peer-1"
     assert result.sync_result.clients == ()
+    assert await ClientInventoryService(database).list_clients_for_provider(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+    ) == []
+
+
+@pytest.mark.asyncio
+async def test_get_provider_client_rejects_identity_mismatch(
+    database: DatabaseManager,
+) -> None:
+    inventory_service = ClientInventoryService(database)
+    clients = await inventory_service.sync_provider_clients(
+        server_key="vps-de",
+        provider_type=ProviderType.WIREGUARD,
+        clients=[VpnClientSyncItem(provider_client_id="peer-1", display_name="Alice")],
+    )
+    service = ProviderClientSyncService(
+        server_registry=_registry(),
+        executor_factory=FakeExecutorFactory(),
+        provider_factory=FakeProviderFactory(FakeProvider([])),
+        client_inventory_service=inventory_service,
+    )
+
+    with pytest.raises(ValueError, match="does not belong"):
+        await service.get_provider_client(
+            server_key="vps-nl",
+            provider_type=ProviderType.WIREGUARD,
+            vpn_client_id=clients[0].id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_delete_inventory_client_uses_provider_client_id_and_syncs(
+    database: DatabaseManager,
+) -> None:
+    provider = FakeProvider(
+        [
+            {
+                "provider_client_id": "peer-1",
+                "display_name": "Alice Phone",
+            }
+        ]
+    )
+    inventory_service = ClientInventoryService(database)
+    clients = await inventory_service.sync_provider_clients(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        clients=[VpnClientSyncItem(provider_client_id="peer-1", display_name="Alice")],
+    )
+    service = ProviderClientSyncService(
+        server_registry=_registry(),
+        executor_factory=FakeExecutorFactory(),
+        provider_factory=FakeProviderFactory(provider),
+        client_inventory_service=inventory_service,
+    )
+
+    result = await service.delete_inventory_client(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        vpn_client_id=clients[0].id,
+    )
+
+    assert provider.delete_calls == ["peer-1"]
+    assert result.provider_client_id == "peer-1"
+    assert result.sync_result.clients == ()

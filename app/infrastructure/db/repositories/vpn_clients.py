@@ -70,6 +70,25 @@ class VpnClientRepository:
         await self._session.flush()
         return client
 
+    async def mark_deleted_by_identity(
+        self,
+        *,
+        server_key: str,
+        provider_type: str,
+        provider_client_id: str,
+    ) -> VpnClientORM | None:
+        client = await self.get_by_identity(
+            server_key=server_key,
+            provider_type=provider_type,
+            provider_client_id=provider_client_id,
+        )
+        if client is None:
+            return None
+
+        client.status = ClientStatus.DELETED.value
+        await self._session.flush()
+        return client
+
     async def link_to_telegram_user(
         self,
         *,

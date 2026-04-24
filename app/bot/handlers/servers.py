@@ -11,6 +11,8 @@ from app.bot.callbacks import (
     MenuSection,
     ProviderClientAction,
     ProviderClientActionCallback,
+    ProviderClientItemAction,
+    ProviderClientItemActionCallback,
     ServerSection,
     ServerSectionCallback,
     ServerSelectCallback,
@@ -18,6 +20,8 @@ from app.bot.callbacks import (
 from app.bot.formatters import (
     render_host_action_error,
     render_host_action_result,
+    render_provider_client_delete_confirmation,
+    render_provider_client_delete_result,
     render_provider_client_sync_result,
     render_provider_clients_list,
     render_server_card_text,
@@ -28,6 +32,8 @@ from app.bot.formatters import (
 )
 from app.bot.handlers.common import send_or_edit_text
 from app.bot.keyboards import (
+    build_provider_client_delete_confirm_keyboard,
+    build_provider_clients_keyboard,
     build_server_back_keyboard,
     build_server_card_keyboard,
     build_server_list_keyboard,
@@ -166,17 +172,19 @@ async def handle_provider_client_action(
                 provider_type=callback_data.provider,
                 clients=clients,
             )
+            reply_markup = build_provider_clients_keyboard(
+                server_key=callback_data.key,
+                provider_type=callback_data.provider,
+                clients=clients,
+            )
         except Exception as exc:
             text = render_host_action_error(
                 server_key=callback_data.key,
                 action_key=f"{callback_data.provider.value}:{callback_data.action.value}",
                 error=exc,
             )
-        await send_or_edit_text(
-            event=callback,
-            text=text,
-            reply_markup=build_server_back_keyboard(server_key=callback_data.key),
-        )
+            reply_markup = build_server_back_keyboard(server_key=callback_data.key)
+        await send_or_edit_text(event=callback, text=text, reply_markup=reply_markup)
         return
 
     if callback_data.action != ProviderClientAction.SYNC:
@@ -201,3 +209,60 @@ async def handle_provider_client_action(
         text=text,
         reply_markup=build_server_back_keyboard(server_key=callback_data.key),
     )
+
+
+@router.callback_query(ProviderClientItemActionCallback.filter())
+async def handle_provider_client_item_action(
+    callback: CallbackQuery,
+    callback_data: ProviderClientItemActionCallback,
+    app_context: ApplicationContext,
+    user_role: UserRole,
+) -> None:
+    if not await _ensure_admin(callback, user_role):
+        return
+
+    if callback_data.action == ProviderClientItemAction.DELETE:
+        try:
+            client = await app_context.provider_client_sync_service.get_provider_client(
+                server_key=callback_data.key,
+                provider_type=callback_data.provider,
+                vpn_client_id=callback_data.client_id,
+            )
+            text = render_provider_client_delete_confirmation(client)
+            reply_markup = build_provider_client_delete_confirm_keyboard(
+                server_key=callback_data.key,
+                provider_type=callback_data.provider,
+                client_id=callback_data.client_id,
+            )
+        except Exception as exc:
+            text = render_host_action_error(
+                server_key=callback_data.key,
+                action_key=f"{callback_data.provider.value}:{callback_data.action.value}",
+                error=exc,
+            )
+            reply_markup = build_server_back_keyboard(server_key=callback_data.key)
+        await send_or_edit_text(event=callback, text=text, reply_markup=reply_markup)
+        return
+
+    if callback_data.action == ProviderClientItemAction.CONFIRM_DELETE:
+        try:
+            result = await app_context.provider_client_sync_service.delete_inventory_client(
+                server_key=callback_data.key,
+                provider_type=callback_data.provider,
+                vpn_client_id=callback_data.client_id,
+            )
+            text = render_provider_client_delete_result(result)
+        except Exception as exc:
+            text = render_host_action_error(
+                server_key=callback_data.key,
+                action_key=f"{callback_data.provider.value}:{callback_data.action.value}",
+                error=exc,
+            )
+        await send_or_edit_text(
+            event=callback,
+            text=text,
+            reply_markup=build_server_back_keyboard(server_key=callback_data.key),
+        )
+        return
+
+    await callback.answer("Неизвестное действие клиента.", show_alert=True)

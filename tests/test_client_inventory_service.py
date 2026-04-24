@@ -188,3 +188,32 @@ async def test_list_clients_for_provider_filters_identity_and_deleted(
         "peer-1",
         "peer-deleted",
     ]
+
+
+@pytest.mark.asyncio
+async def test_get_and_mark_provider_client_deleted(
+    database: DatabaseManager,
+) -> None:
+    service = ClientInventoryService(database)
+    clients = await service.sync_provider_clients(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        clients=[VpnClientSyncItem(provider_client_id="peer-1", display_name="Alice")],
+    )
+
+    fetched = await service.get_client(clients[0].id)
+    deleted = await service.mark_provider_client_deleted(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        provider_client_id="peer-1",
+    )
+    active_clients = await service.list_clients_for_provider(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+    )
+
+    assert fetched is not None
+    assert fetched.provider_client_id == "peer-1"
+    assert deleted is not None
+    assert deleted.status == ClientStatus.DELETED
+    assert active_clients == []

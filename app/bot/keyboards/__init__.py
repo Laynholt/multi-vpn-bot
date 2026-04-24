@@ -7,6 +7,8 @@ from app.bot.keyboards.admin_users import (
 )
 from app.bot.keyboards.main_menu import build_back_home_keyboard, build_main_menu_keyboard
 from app.bot.keyboards.servers import (
+    build_provider_client_delete_confirm_keyboard,
+    build_provider_clients_keyboard,
     build_server_back_keyboard,
     build_server_card_keyboard,
     build_server_list_keyboard,
@@ -20,6 +22,8 @@ __all__ = [
     "build_admin_users_page_keyboard",
     "build_back_home_keyboard",
     "build_main_menu_keyboard",
+    "build_provider_client_delete_confirm_keyboard",
+    "build_provider_clients_keyboard",
     "build_server_back_keyboard",
     "build_server_card_keyboard",
     "build_server_list_keyboard",

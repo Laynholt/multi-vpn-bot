@@ -4,6 +4,8 @@ from datetime import datetime
 
 from app.bot.formatters import (
     render_host_action_result,
+    render_provider_client_delete_confirmation,
+    render_provider_client_delete_result,
     render_provider_client_sync_result,
     render_provider_clients_list,
     render_server_card_text,
@@ -18,7 +20,7 @@ from app.domain.enums.common import ClientStatus
 from app.providers import ProviderFactory, ProviderRegistry
 from app.services.client_inventory import VpnClientSnapshot
 from app.services.host_actions import HostActionExecution, HostActionRegistry
-from app.services.provider_clients import ProviderClientSyncResult
+from app.services.provider_clients import ProviderClientDeleteResult, ProviderClientSyncResult
 
 
 def _registry() -> ServerRegistry:
@@ -211,3 +213,43 @@ def test_render_provider_clients_list_handles_empty_clients() -> None:
 
     assert "Клиенты провайдера" in text
     assert "В inventory пока нет клиентов" in text
+
+
+def test_render_provider_client_delete_confirmation_is_explicit() -> None:
+    now = datetime(2026, 1, 1)
+    client = VpnClientSnapshot(
+        id=1,
+        provider_type=ProviderType.WIREGUARD,
+        server_key="srv-html",
+        provider_client_id="peer-1",
+        display_name="<Alice>",
+        status=ClientStatus.ACTIVE,
+        metadata={},
+        telegram_user_ids=(1001,),
+        created_at=now,
+        updated_at=now,
+    )
+
+    text = render_provider_client_delete_confirmation(client)
+
+    assert "Подтвердите удаление клиента" in text
+    assert "&lt;Alice&gt;" in text
+    assert "<code>peer-1</code>" in text
+    assert "users: 1001" in text
+
+
+def test_render_provider_client_delete_result_summarizes_action() -> None:
+    result = ProviderClientDeleteResult(
+        provider_client_id="peer-1",
+        sync_result=ProviderClientSyncResult(
+            server_key="srv-html",
+            provider_type=ProviderType.WIREGUARD,
+            clients=(),
+        ),
+    )
+
+    text = render_provider_client_delete_result(result)
+
+    assert "Клиент удалён" in text
+    assert "<code>peer-1</code>" in text
+    assert "remaining synced: 0" in text

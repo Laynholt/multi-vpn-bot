@@ -5,6 +5,8 @@ from app.bot.formatters.menu import render_home_text, render_section_text
 from app.bot.formatters.servers import (
     render_host_action_error,
     render_host_action_result,
+    render_provider_client_delete_confirmation,
+    render_provider_client_delete_result,
     render_provider_client_sync_result,
     render_provider_clients_list,
     render_server_card_text,
@@ -20,6 +22,8 @@ __all__ = [
     "render_host_action_error",
     "render_host_action_result",
     "render_home_text",
+    "render_provider_client_delete_confirmation",
+    "render_provider_client_delete_result",
     "render_provider_clients_list",
     "render_provider_client_sync_result",
     "render_server_card_text",

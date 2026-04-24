@@ -9,7 +9,7 @@ from app.core.registry import RegisteredServer, ServerRegistry
 from app.providers import BaseProvider
 from app.services.client_inventory import VpnClientSnapshot
 from app.services.host_actions import HostActionDefinition, HostActionExecution
-from app.services.provider_clients import ProviderClientSyncResult
+from app.services.provider_clients import ProviderClientDeleteResult, ProviderClientSyncResult
 
 
 def _server_title(server: RegisteredServer) -> str:
@@ -216,3 +216,32 @@ def render_provider_clients_list(
     if len(clients) > 20:
         lines.append(f"... and {len(clients) - 20} more")
     return "\n".join(lines)
+
+
+def render_provider_client_delete_confirmation(client: VpnClientSnapshot) -> str:
+    users = ", ".join(str(user_id) for user_id in client.telegram_user_ids) or "-"
+    return "\n".join(
+        [
+            "Подтвердите удаление клиента",
+            "",
+            f"name: {escape(client.display_name)}",
+            f"id: <code>{escape(client.provider_client_id)}</code>",
+            f"server: <code>{escape(client.server_key)}</code>",
+            f"provider: <code>{escape(client.provider_type.value)}</code>",
+            f"status: {client.status.value}",
+            f"users: {escape(users)}",
+        ]
+    )
+
+
+def render_provider_client_delete_result(result: ProviderClientDeleteResult) -> str:
+    return "\n".join(
+        [
+            "Клиент удалён",
+            "",
+            f"client: <code>{escape(result.provider_client_id)}</code>",
+            f"server: <code>{escape(result.sync_result.server_key)}</code>",
+            f"provider: <code>{escape(result.sync_result.provider_type.value)}</code>",
+            f"remaining synced: {len(result.sync_result.clients)}",
+        ]
+    )

@@ -11,12 +11,15 @@ from app.bot.callbacks import (
     MenuSection,
     ProviderClientAction,
     ProviderClientActionCallback,
+    ProviderClientItemAction,
+    ProviderClientItemActionCallback,
     ServerSection,
     ServerSectionCallback,
     ServerSelectCallback,
 )
-from app.core.config.models import ProviderConfig
+from app.core.config.models import ProviderConfig, ProviderType
 from app.core.registry import ServerRegistry
+from app.services.client_inventory import VpnClientSnapshot
 from app.services.host_actions import HostActionDefinition
 
 
@@ -125,6 +128,71 @@ def build_server_providers_keyboard(
     builder.button(
         text="Назад",
         callback_data=ServerSelectCallback(key=server_key).pack(),
+    )
+    builder.button(
+        text="Домой",
+        callback_data=MenuActionCallback(section=MenuSection.HOME).pack(),
+    )
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def build_provider_clients_keyboard(
+    *,
+    server_key: str,
+    provider_type: ProviderType,
+    clients: tuple[VpnClientSnapshot, ...],
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for client in clients[:20]:
+        builder.button(
+            text=f"Удалить {client.display_name}",
+            callback_data=ProviderClientItemActionCallback(
+                key=server_key,
+                provider=provider_type,
+                client_id=client.id,
+                action=ProviderClientItemAction.DELETE,
+            ).pack(),
+        )
+
+    builder.button(
+        text="Назад",
+        callback_data=ServerSectionCallback(
+            key=server_key,
+            section=ServerSection.PROVIDERS,
+        ).pack(),
+    )
+    builder.button(
+        text="Домой",
+        callback_data=MenuActionCallback(section=MenuSection.HOME).pack(),
+    )
+    builder.adjust(1, 2)
+    return builder.as_markup()
+
+
+def build_provider_client_delete_confirm_keyboard(
+    *,
+    server_key: str,
+    provider_type: ProviderType,
+    client_id: int,
+) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Подтвердить удаление",
+        callback_data=ProviderClientItemActionCallback(
+            key=server_key,
+            provider=provider_type,
+            client_id=client_id,
+            action=ProviderClientItemAction.CONFIRM_DELETE,
+        ).pack(),
+    )
+    builder.button(
+        text="Назад",
+        callback_data=ProviderClientActionCallback(
+            key=server_key,
+            provider=provider_type,
+            action=ProviderClientAction.LIST,
+        ).pack(),
     )
     builder.button(
         text="Домой",

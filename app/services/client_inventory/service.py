@@ -91,6 +91,38 @@ class ClientInventoryService:
             telegram_user_ids = await repository.list_linked_user_ids(vpn_client_id)
             return self._to_snapshot(client, telegram_user_ids)
 
+    async def get_client(self, vpn_client_id: int) -> VpnClientSnapshot | None:
+        async with self._database.session() as session:
+            from app.infrastructure.db.repositories import VpnClientRepository
+
+            repository = VpnClientRepository(session)
+            client = await repository.get_by_id(vpn_client_id)
+            if client is None:
+                return None
+            telegram_user_ids = await repository.list_linked_user_ids(client.id)
+            return self._to_snapshot(client, telegram_user_ids)
+
+    async def mark_provider_client_deleted(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+        provider_client_id: str,
+    ) -> VpnClientSnapshot | None:
+        async with self._database.session() as session:
+            from app.infrastructure.db.repositories import VpnClientRepository
+
+            repository = VpnClientRepository(session)
+            client = await repository.mark_deleted_by_identity(
+                server_key=server_key,
+                provider_type=provider_type.value,
+                provider_client_id=provider_client_id,
+            )
+            if client is None:
+                return None
+            telegram_user_ids = await repository.list_linked_user_ids(client.id)
+            return self._to_snapshot(client, telegram_user_ids)
+
     async def list_clients_for_user(
         self,
         *,

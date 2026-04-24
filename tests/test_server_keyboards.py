@@ -1,13 +1,19 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.bot.callbacks import (
     HostActionCallback,
     ProviderClientAction,
     ProviderClientActionCallback,
+    ProviderClientItemAction,
+    ProviderClientItemActionCallback,
     ServerSection,
     ServerSectionCallback,
 )
 from app.bot.keyboards import (
+    build_provider_client_delete_confirm_keyboard,
+    build_provider_clients_keyboard,
     build_server_card_keyboard,
     build_server_list_keyboard,
     build_server_providers_keyboard,
@@ -16,6 +22,8 @@ from app.bot.keyboards import (
 from app.core.config import load_config
 from app.core.config.models import ProviderConfig, ProviderType
 from app.core.registry import ServerRegistry
+from app.domain.enums.common import ClientStatus
+from app.services.client_inventory import VpnClientSnapshot
 from app.services.host_actions import HostActionRegistry
 
 
@@ -108,6 +116,57 @@ def test_build_server_providers_keyboard_contains_provider_list_callbacks() -> N
             key="vps-nl",
             provider=ProviderType.WIREGUARD,
             action=ProviderClientAction.LIST,
+        ).pack()
+        in callbacks
+    )
+
+
+def test_build_provider_clients_keyboard_contains_delete_callbacks() -> None:
+    markup = build_provider_clients_keyboard(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        clients=(
+            VpnClientSnapshot(
+                id=12,
+                provider_type=ProviderType.WIREGUARD,
+                server_key="vps-nl",
+                provider_client_id="peer-1",
+                display_name="Alice",
+                status=ClientStatus.ACTIVE,
+                metadata={},
+                telegram_user_ids=(),
+                created_at=datetime(2026, 1, 1),
+                updated_at=datetime(2026, 1, 1),
+            ),
+        ),
+    )
+
+    callbacks = {callback for _text, callback in _button_payloads(markup)}
+    assert (
+        ProviderClientItemActionCallback(
+            key="vps-nl",
+            provider=ProviderType.WIREGUARD,
+            client_id=12,
+            action=ProviderClientItemAction.DELETE,
+        ).pack()
+        in callbacks
+    )
+
+
+def test_build_provider_client_delete_confirm_keyboard_contains_confirm_callback() -> None:
+    markup = build_provider_client_delete_confirm_keyboard(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+        client_id=12,
+    )
+
+    callbacks = {callback for _text, callback in _button_payloads(markup)}
+    assert (
+        ProviderClientItemActionCallback(
+            key="vps-nl",
+            provider=ProviderType.WIREGUARD,
+            client_id=12,
+            action=ProviderClientItemAction.CONFIRM_DELETE,
         ).pack()
         in callbacks
     )

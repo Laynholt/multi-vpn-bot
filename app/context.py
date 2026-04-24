@@ -9,6 +9,7 @@ from app.core.config.models import AppConfig
 from app.core.executors import ExecutorFactory
 from app.core.permissions import AccessService
 from app.core.registry import ServerRegistry
+from app.providers import ProviderFactory
 
 if TYPE_CHECKING:
     from app.infrastructure.db import DatabaseManager
@@ -25,6 +26,7 @@ class ApplicationContext:
     database: DatabaseManager
     server_registry: ServerRegistry
     executor_factory: ExecutorFactory
+    provider_factory: ProviderFactory
     host_actions_service: HostActionsService
     access_service: AccessService
     telegram_user_service: TelegramUserService

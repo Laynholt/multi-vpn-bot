@@ -71,11 +71,13 @@ async def bootstrap(
         from app.bot import run_bot
         from app.context import ApplicationContext
         from app.core.permissions import AccessService
+        from app.providers import ProviderFactory, ProviderRegistry
         from app.services.host_actions import HostActionRegistry, HostActionsService
         from app.services.messages import MessageBridgeService
         from app.services.users import TelegramUserService
 
         access_service = AccessService(config.telegram)
+        provider_factory = ProviderFactory(ProviderRegistry.with_builtin_providers())
         host_action_registry = HostActionRegistry()
         host_actions_service = HostActionsService(
             server_registry=registry,
@@ -94,6 +96,7 @@ async def bootstrap(
             database=database,
             server_registry=registry,
             executor_factory=executor_factory,
+            provider_factory=provider_factory,
             host_actions_service=host_actions_service,
             access_service=access_service,
             telegram_user_service=telegram_user_service,

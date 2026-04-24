@@ -5,6 +5,7 @@ from __future__ import annotations
 from html import escape
 
 from app.core.registry import RegisteredServer, ServerRegistry
+from app.providers import BaseProvider
 from app.services.host_actions import HostActionDefinition, HostActionExecution
 
 
@@ -67,7 +68,11 @@ def render_server_system_text(
     return "\n".join(lines)
 
 
-def render_server_providers_text(server: RegisteredServer) -> str:
+def render_server_providers_text(
+    server: RegisteredServer,
+    *,
+    providers: tuple[BaseProvider, ...] = (),
+) -> str:
     lines = [
         f"Провайдеры · {_server_title(server)}",
         "",
@@ -82,6 +87,18 @@ def render_server_providers_text(server: RegisteredServer) -> str:
         if provider.settings:
             keys = ", ".join(sorted(provider.settings))
             lines.append(f"settings: {escape(keys)}")
+
+        provider_module = next(
+            (
+                item
+                for item in providers
+                if item.provider_type == provider.type and item.config is provider
+            ),
+            None,
+        )
+        if provider_module is not None:
+            capabilities = ", ".join(provider_module.capabilities.enabled_names())
+            lines.append(f"capabilities: {escape(capabilities)}")
     return "\n".join(lines)
 
 

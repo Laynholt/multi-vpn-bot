@@ -10,6 +10,7 @@ from app.bot.formatters import (
 from app.core.config.models import AppConfig
 from app.core.executors import CommandResult
 from app.core.registry import ServerRegistry
+from app.providers import ProviderFactory, ProviderRegistry
 from app.services.host_actions import HostActionExecution, HostActionRegistry
 
 
@@ -83,12 +84,19 @@ def test_render_server_system_text_lists_enabled_actions_only() -> None:
 
 def test_render_server_providers_text_lists_enabled_and_disabled_providers() -> None:
     server = _registry().get("srv-html")
+    provider_factory = ProviderFactory(ProviderRegistry.with_builtin_providers())
+    providers = tuple(
+        provider_factory.create(provider_config)
+        for provider_config in server.providers
+        if provider_config.enabled
+    )
 
-    text = render_server_providers_text(server)
+    text = render_server_providers_text(server, providers=providers)
 
     assert "wireguard · enabled" in text
     assert "3xui · disabled" in text
     assert "wireguard_interface" in text
+    assert "export_client_config" in text
 
 
 def test_render_host_action_result_truncates_long_output() -> None:

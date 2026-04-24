@@ -33,10 +33,7 @@ def render_admin_users_page(page_data: TelegramUserPage) -> str:
 
     for user in page_data.items:
         display_name = _render_display_name(user)
-        lines.append(
-            f"{display_name} · id={user.telegram_user_id} "
-            f"· status={user.status.value}"
-        )
+        lines.append(f"{display_name} · id={user.telegram_user_id} · status={user.status.value}")
     return "\n".join(lines)
 
 

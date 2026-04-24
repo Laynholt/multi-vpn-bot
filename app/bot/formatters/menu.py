@@ -51,10 +51,7 @@ def render_section_text(
             provider_count = len([provider for provider in server.providers if provider.enabled])
             server_name = f"{icon}{escape(server.title)}"
             server_key = escape(server.key)
-            lines.append(
-                f"{server_name} (<code>{server_key}</code>) "
-                f"· providers: {provider_count}"
-            )
+            lines.append(f"{server_name} (<code>{server_key}</code>) · providers: {provider_count}")
         return "\n".join(lines)
 
     if section == MenuSection.PROFILE:

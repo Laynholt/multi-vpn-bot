@@ -90,7 +90,12 @@ async def open_server_section(
         text = render_server_system_text(server=server, actions=actions)
         reply_markup = build_server_system_keyboard(server_key=server.key, actions=actions)
     elif callback_data.section == ServerSection.PROVIDERS:
-        text = render_server_providers_text(server)
+        providers = tuple(
+            app_context.provider_factory.create(provider_config)
+            for provider_config in server.providers
+            if provider_config.enabled
+        )
+        text = render_server_providers_text(server, providers=providers)
         reply_markup = build_server_back_keyboard(server_key=server.key)
     else:
         text = render_server_info_text(server)

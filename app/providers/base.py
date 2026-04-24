@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from abc import ABC
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from app.core.config.models import ProviderConfig, ProviderType
 from app.providers.capabilities import ProviderCapabilities
+
+if TYPE_CHECKING:
+    from app.core.executors.base import BaseExecutor
 
 
 class BaseProvider(ABC):
@@ -15,8 +18,9 @@ class BaseProvider(ABC):
     provider_type: ProviderType
     capabilities: ProviderCapabilities = ProviderCapabilities()
 
-    def __init__(self, config: ProviderConfig) -> None:
+    def __init__(self, config: ProviderConfig, executor: BaseExecutor | None = None) -> None:
         self.config = config
+        self.executor = executor
 
     async def healthcheck(self) -> bool:
         raise NotImplementedError

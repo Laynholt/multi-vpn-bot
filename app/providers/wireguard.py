@@ -1,0 +1,215 @@
+"""WireGuard provider implementation."""
+
+from __future__ import annotations
+
+import posixpath
+import re
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal, Self
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.core.config.models import ProviderConfig, ProviderType
+from app.providers.base import BaseProvider
+from app.providers.capabilities import ProviderCapabilities
+
+if TYPE_CHECKING:
+    from app.core.executors.base import BaseExecutor
+    from app.core.executors.models import CommandResult
+
+
+class WireGuardProviderSettings(BaseModel):
+    """Validated WireGuard provider settings."""
+
+    model_config = ConfigDict(extra="ignore", frozen=True)
+
+    wireguard_interface: str = Field(default="wg0", min_length=1)
+    runtime: Literal["systemd", "docker"] = "systemd"
+    systemd_service_name: str | None = None
+    docker_container_name: str | None = None
+    wireguard_folder: str | None = None
+    wireguard_config_filepath: str | None = None
+    client_config_dir: str | None = None
+    allowed_username_pattern: str = r"a-zA-Z0-9_.@-"
+
+    @model_validator(mode="after")
+    def validate_runtime_settings(self) -> Self:
+        if self.runtime == "docker" and not self.docker_container_name:
+            raise ValueError("docker_container_name is required for docker WireGuard runtime")
+        return self
+
+    @property
+    def resolved_systemd_service_name(self) -> str:
+        return self.systemd_service_name or f"wg-quick@{self.wireguard_interface}"
+
+    @property
+    def resolved_client_config_dir(self) -> str:
+        if self.client_config_dir is not None:
+            return self.client_config_dir.rstrip("/")
+        if self.wireguard_folder is not None:
+            return posixpath.join(self.wireguard_folder.rstrip("/"), "config", "wg_confs")
+        return "/etc/wireguard/clients"
+
+
+@dataclass(frozen=True, slots=True)
+class WireGuardPeerDump:
+    public_key: str
+    endpoint: str | None
+    allowed_ips: str
+    latest_handshake: int
+    rx_bytes_total: int
+    tx_bytes_total: int
+    persistent_keepalive: str
+
+    @property
+    def status(self) -> str:
+        return "active" if self.latest_handshake > 0 else "disabled"
+
+    @property
+    def metadata(self) -> dict[str, Any]:
+        return {
+            "allowed_ips": self.allowed_ips,
+            "endpoint": self.endpoint,
+            "latest_handshake": self.latest_handshake,
+            "persistent_keepalive": self.persistent_keepalive,
+            "public_key": self.public_key,
+        }
+
+
+class WireGuardProvider(BaseProvider):
+    """WireGuard provider backed by local or remote executor commands."""
+
+    provider_type = ProviderType.WIREGUARD
+    capabilities = ProviderCapabilities(
+        list_clients=True,
+        create_client=True,
+        enable_client=False,
+        disable_client=False,
+        delete_client=True,
+        export_client_config=True,
+        collect_client_stats=True,
+    )
+
+    def __init__(
+        self,
+        config: ProviderConfig,
+        executor: BaseExecutor | None = None,
+    ) -> None:
+        super().__init__(config, executor=executor)
+        self.settings = WireGuardProviderSettings.model_validate(config.settings)
+
+    async def healthcheck(self) -> bool:
+        if self.settings.runtime == "docker":
+            assert self.settings.docker_container_name is not None
+            result = await self._run(
+                (
+                    "docker",
+                    "inspect",
+                    "-f",
+                    "{{.State.Running}}",
+                    self.settings.docker_container_name,
+                )
+            )
+            return result.ok and result.stdout.strip().lower() == "true"
+
+        result = await self._run(
+            ("systemctl", "is-active", self.settings.resolved_systemd_service_name)
+        )
+        return result.ok and result.stdout.strip() == "active"
+
+    async def list_clients(self) -> list[dict[str, Any]]:
+        peers = await self._load_peer_dump()
+        return [
+            {
+                "provider_client_id": peer.public_key,
+                "display_name": peer.allowed_ips,
+                "status": peer.status,
+                "metadata": peer.metadata,
+            }
+            for peer in peers
+        ]
+
+    async def get_client(self, client_id: str) -> dict[str, Any] | None:
+        for client in await self.list_clients():
+            if client["provider_client_id"] == client_id:
+                return client
+        return None
+
+    async def export_client_config(self, client_id: str) -> bytes:
+        safe_client_id = self._validate_client_file_id(client_id)
+        config_path = posixpath.join(
+            self.settings.resolved_client_config_dir,
+            f"{safe_client_id}.conf",
+        )
+        result = await self._run(("cat", config_path))
+        if not result.ok:
+            raise RuntimeError(f"Failed to export WireGuard config for {client_id!r}")
+        return result.stdout.encode()
+
+    async def collect_client_stats(self) -> list[dict[str, Any]]:
+        peers = await self._load_peer_dump()
+        return [
+            {
+                "provider_client_id": peer.public_key,
+                "counter_mode": "cumulative",
+                "rx_bytes_total": peer.rx_bytes_total,
+                "tx_bytes_total": peer.tx_bytes_total,
+                "metadata": peer.metadata,
+            }
+            for peer in peers
+        ]
+
+    async def _load_peer_dump(self) -> list[WireGuardPeerDump]:
+        result = await self._run_wg(("show", self.settings.wireguard_interface, "dump"))
+        if not result.ok:
+            raise RuntimeError("Failed to load WireGuard peer dump")
+        return self._parse_peer_dump(result.stdout)
+
+    async def _run_wg(self, args: tuple[str, ...]) -> CommandResult:
+        if self.settings.runtime == "docker":
+            assert self.settings.docker_container_name is not None
+            return await self._run(
+                ("docker", "exec", self.settings.docker_container_name, "wg", *args)
+            )
+        return await self._run(("wg", *args))
+
+    async def _run(self, command: tuple[str, ...]) -> CommandResult:
+        if self.executor is None:
+            raise RuntimeError("WireGuardProvider requires an executor")
+        return await self.executor.run(command)
+
+    def _parse_peer_dump(self, stdout: str) -> list[WireGuardPeerDump]:
+        rows = [line.split("\t") for line in stdout.splitlines() if line.strip()]
+        peers: list[WireGuardPeerDump] = []
+        for row in rows[1:]:
+            if len(row) < 8:
+                continue
+            peers.append(
+                WireGuardPeerDump(
+                    public_key=row[0],
+                    endpoint=self._none_if_empty(row[2]),
+                    allowed_ips=row[3],
+                    latest_handshake=self._parse_int(row[4]),
+                    rx_bytes_total=self._parse_int(row[5]),
+                    tx_bytes_total=self._parse_int(row[6]),
+                    persistent_keepalive=row[7],
+                )
+            )
+        return peers
+
+    def _validate_client_file_id(self, client_id: str) -> str:
+        allowed = self.settings.allowed_username_pattern
+        if not re.fullmatch(f"[{allowed}]+", client_id):
+            raise ValueError(f"Unsafe WireGuard client config id: {client_id!r}")
+        return client_id
+
+    @staticmethod
+    def _none_if_empty(value: str) -> str | None:
+        return None if value in {"", "(none)"} else value
+
+    @staticmethod
+    def _parse_int(value: str) -> int:
+        try:
+            return int(value)
+        except ValueError:
+            return 0

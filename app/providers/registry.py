@@ -6,7 +6,8 @@ from dataclasses import dataclass
 
 from app.core.config.models import ProviderType
 from app.providers.base import BaseProvider
-from app.providers.builtin import WireGuardProvider, X3UIProvider
+from app.providers.builtin import X3UIProvider
+from app.providers.wireguard import WireGuardProvider
 
 
 class UnsupportedProviderError(ValueError):

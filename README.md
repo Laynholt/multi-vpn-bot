@@ -5,6 +5,8 @@
 Текущее состояние:
 
 - реализованы этапы 0-13 из `docs/IMPLEMENTATION_TASKS.md` в базовом виде;
+- этап 14 начат: добавлен executor-backed `WireGuardProvider` для healthcheck,
+  списка peers, peer stats и экспорта клиентского `.conf`;
 - собран базовый каркас проекта;
 - добавлены строгие pydantic-модели JSON-конфига;
 - добавлены базовое логирование и безопасный bootstrap;
@@ -48,7 +50,8 @@ python -m app.main --config configs/config.json
 - `app/services/client_inventory`: единый реестр VPN-клиентов и связи с Telegram users;
 - `app/services/traffic_stats`: нормализация статистики, raw samples,
   delta calculation и дневные агрегаты;
-- `app/providers`: базовый provider contract, capabilities, factory и registry;
+- `app/providers`: базовый provider contract, capabilities, factory, registry
+  и первый WireGuard provider slice;
 - `app/bot`: aiogram runtime, inline navigation, admin user management,
   message bridge и server UI;
 - `app/main.py`: bootstrap конфига, логирования, БД, registry и Telegram runtime.
@@ -59,6 +62,6 @@ python -m app.main --config configs/config.json
 
 ## Следующий шаг
 
-Следующий логичный блок — `WireGuard provider`: реальная интеграция со списком
-clients, peer stats, выдачей конфигов и передачей статистики в unified traffic
-statistics layer.
+Следующий логичный блок — продолжение `WireGuard provider`: безопасное создание
+и удаление peers, изменение `wg0.conf`, применение конфигурации через Docker или
+systemd и синхронизация inventory после provider actions.

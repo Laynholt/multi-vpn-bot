@@ -14,6 +14,7 @@ from app.core.config.models import ProviderType, StatisticsConfig
 from app.domain.enums.common import StatPeriodType
 
 if TYPE_CHECKING:
+    from app.core.executors import ExecutorFactory
     from app.core.registry import ServerRegistry
     from app.infrastructure.db import DatabaseManager
     from app.infrastructure.db.models import TrafficStatDailyORM, TrafficStatSampleORM
@@ -400,12 +401,14 @@ class TrafficStatsCollector:
         server_registry: ServerRegistry,
         provider_factory: ProviderFactory,
         traffic_stats_service: TrafficStatsService,
+        executor_factory: ExecutorFactory | None = None,
         sleep: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._statistics_config = statistics_config
         self._server_registry = server_registry
         self._provider_factory = provider_factory
         self._traffic_stats_service = traffic_stats_service
+        self._executor_factory = executor_factory
         self._sleep = sleep
 
     @property
@@ -421,7 +424,12 @@ class TrafficStatsCollector:
             for provider_config in server.providers:
                 if not provider_config.enabled:
                     continue
-                provider = self._provider_factory.create(provider_config)
+                executor = (
+                    self._executor_factory.for_server(server)
+                    if self._executor_factory is not None
+                    else None
+                )
+                provider = self._provider_factory.create(provider_config, executor=executor)
                 if not provider.capabilities.collect_client_stats:
                     continue
                 payloads = await provider.collect_client_stats()

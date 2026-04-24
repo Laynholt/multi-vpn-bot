@@ -13,6 +13,7 @@ from app.providers import ProviderFactory
 
 if TYPE_CHECKING:
     from app.infrastructure.db import DatabaseManager
+    from app.services.admin_audit import AdminAuditService
     from app.services.config_delivery import ConfigDeliveryService
     from app.services.host_actions import HostActionsService
     from app.services.messages import MessageBridgeService
@@ -30,6 +31,7 @@ class ApplicationContext:
     server_registry: ServerRegistry
     executor_factory: ExecutorFactory
     provider_factory: ProviderFactory
+    admin_audit_service: AdminAuditService
     host_actions_service: HostActionsService
     provider_client_sync_service: ProviderClientSyncService
     config_delivery_service: ConfigDeliveryService

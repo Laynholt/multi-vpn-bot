@@ -130,6 +130,29 @@ class FakeConfigDeliveryService:
         return self.client_file
 
 
+@dataclass
+class FakeAdminAuditService:
+    calls: list[dict[str, object]]
+
+    async def record_config_delivery(
+        self,
+        *,
+        admin_telegram_user_id: int,
+        target_telegram_user_id: int,
+        vpn_client_id: int | None,
+        result: ConfigDeliveryResult,
+    ) -> None:
+        self.calls.append(
+            {
+                "admin_telegram_user_id": admin_telegram_user_id,
+                "target_telegram_user_id": target_telegram_user_id,
+                "vpn_client_id": vpn_client_id,
+                "file_count": len(result.files),
+                "error_count": len(result.errors),
+            }
+        )
+
+
 @pytest.mark.asyncio
 async def test_open_admin_traffic_report_renders_summary(
     monkeypatch: pytest.MonkeyPatch,
@@ -306,6 +329,7 @@ async def test_send_config_command_sends_user_configs(
 
     monkeypatch.setattr(admin_users, "send_or_edit_text", fake_send_or_edit_text)
     bot = FakeBot()
+    audit_service = FakeAdminAuditService(calls=[])
     service = FakeConfigDeliveryService(
         user_calls=[],
         client_calls=[],
@@ -326,7 +350,7 @@ async def test_send_config_command_sends_user_configs(
 
     await admin_users.send_config_command(
         FakeAdminMessage("/send_config user=1001", bot),
-        SimpleNamespace(config_delivery_service=service),
+        SimpleNamespace(config_delivery_service=service, admin_audit_service=audit_service),
         UserRole.ADMIN,
     )
 
@@ -337,6 +361,15 @@ async def test_send_config_command_sends_user_configs(
             "chat_id": 1001,
             "filename": "alice.conf",
             "caption": "VPN config: Alice Phone",
+        }
+    ]
+    assert audit_service.calls == [
+        {
+            "admin_telegram_user_id": 500,
+            "target_telegram_user_id": 1001,
+            "vpn_client_id": None,
+            "file_count": 1,
+            "error_count": 0,
         }
     ]
     assert "Отправлено: 1" in sent[0]["text"]
@@ -353,6 +386,7 @@ async def test_send_config_command_sends_selected_client(
 
     monkeypatch.setattr(admin_users, "send_or_edit_text", fake_send_or_edit_text)
     bot = FakeBot()
+    audit_service = FakeAdminAuditService(calls=[])
     config_file = ConfigDeliveryFile(
         filename="bob.conf",
         content=b"config",
@@ -370,7 +404,7 @@ async def test_send_config_command_sends_selected_client(
 
     await admin_users.send_config_command(
         FakeAdminMessage("/send_config user=1001 client=42", bot),
-        SimpleNamespace(config_delivery_service=service),
+        SimpleNamespace(config_delivery_service=service, admin_audit_service=audit_service),
         UserRole.ADMIN,
     )
 
@@ -378,6 +412,7 @@ async def test_send_config_command_sends_selected_client(
     assert service.client_calls == [42]
     assert bot.documents[0]["chat_id"] == 1001
     assert bot.documents[0]["filename"] == "bob.conf"
+    assert audit_service.calls[0]["vpn_client_id"] == 42
     assert "Отправлено: 1" in sent[0]["text"]
 
 
@@ -392,6 +427,7 @@ async def test_send_config_command_reports_service_error(
 
     monkeypatch.setattr(admin_users, "send_or_edit_text", fake_send_or_edit_text)
     bot = FakeBot()
+    audit_service = FakeAdminAuditService(calls=[])
     service = FakeConfigDeliveryService(
         user_calls=[],
         client_calls=[],
@@ -401,11 +437,12 @@ async def test_send_config_command_reports_service_error(
 
     await admin_users.send_config_command(
         FakeAdminMessage("/send_config user=1001", bot),
-        SimpleNamespace(config_delivery_service=service),
+        SimpleNamespace(config_delivery_service=service, admin_audit_service=audit_service),
         UserRole.ADMIN,
     )
 
     assert bot.documents == []
+    assert audit_service.calls == []
     assert "Не удалось выдать конфиги" in sent[0]["text"]
     assert "provider failed" in sent[0]["text"]
 
@@ -421,6 +458,7 @@ async def test_send_config_command_ignores_regular_user(
 
     monkeypatch.setattr(admin_users, "send_or_edit_text", fake_send_or_edit_text)
     bot = FakeBot()
+    audit_service = FakeAdminAuditService(calls=[])
     service = FakeConfigDeliveryService(
         user_calls=[],
         client_calls=[],
@@ -429,10 +467,11 @@ async def test_send_config_command_ignores_regular_user(
 
     await admin_users.send_config_command(
         FakeAdminMessage("/send_config user=1001", bot),
-        SimpleNamespace(config_delivery_service=service),
+        SimpleNamespace(config_delivery_service=service, admin_audit_service=audit_service),
         UserRole.USER,
     )
 
     assert service.user_calls == []
     assert bot.documents == []
+    assert audit_service.calls == []
     assert sent == []

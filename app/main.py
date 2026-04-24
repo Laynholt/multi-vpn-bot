@@ -72,6 +72,7 @@ async def bootstrap(
         from app.context import ApplicationContext
         from app.core.permissions import AccessService
         from app.providers import ProviderFactory, ProviderRegistry
+        from app.services.admin_audit import AdminAuditService
         from app.services.client_inventory import ClientInventoryService
         from app.services.config_delivery import ConfigDeliveryService
         from app.services.host_actions import HostActionRegistry, HostActionsService
@@ -81,6 +82,7 @@ async def bootstrap(
         from app.services.users import TelegramUserService
 
         access_service = AccessService(config.telegram)
+        admin_audit_service = AdminAuditService(database)
         provider_factory = ProviderFactory(ProviderRegistry.with_builtin_providers())
         host_action_registry = HostActionRegistry()
         host_actions_service = HostActionsService(
@@ -118,6 +120,7 @@ async def bootstrap(
             server_registry=registry,
             executor_factory=executor_factory,
             provider_factory=provider_factory,
+            admin_audit_service=admin_audit_service,
             host_actions_service=host_actions_service,
             provider_client_sync_service=provider_client_sync_service,
             config_delivery_service=config_delivery_service,

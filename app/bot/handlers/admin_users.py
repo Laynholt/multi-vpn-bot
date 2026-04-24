@@ -34,12 +34,10 @@ from app.bot.user_admin_actions import AdminUserAction
 from app.context import ApplicationContext
 from app.core.config.models import ProviderType
 from app.core.permissions import UserRole
-from app.infrastructure.logging import get_audit_logger
 from app.services.config_delivery import ConfigDeliveryFile, ConfigDeliveryResult
 from app.services.traffic_stats import TrafficAdminDailySummary
 
 router = Router(name="admin-users")
-audit_logger = get_audit_logger()
 
 MAX_ADMIN_TRAFFIC_CSV_ROWS = 10_000
 
@@ -317,20 +315,20 @@ async def send_config_command(
         query = _parse_admin_config_delivery_query(message.text or "")
         if message.bot is None:
             raise RuntimeError("Telegram bot is unavailable")
+        admin_telegram_user_id = _admin_user_id(message)
+        if admin_telegram_user_id is None:
+            raise RuntimeError("Admin Telegram user is unavailable")
         result = await _load_admin_config_delivery_result(app_context=app_context, query=query)
         await _send_config_delivery_files(
             bot=message.bot,
             target_user_id=query.target_user_id,
             files=result.files,
         )
-        audit_logger.info(
-            "admin_config_delivery admin_id=%s target_user_id=%s vpn_client_id=%s "
-            "files=%s errors=%s",
-            _admin_user_id(message),
-            query.target_user_id,
-            query.vpn_client_id,
-            len(result.files),
-            len(result.errors),
+        await app_context.admin_audit_service.record_config_delivery(
+            admin_telegram_user_id=admin_telegram_user_id,
+            target_telegram_user_id=query.target_user_id,
+            vpn_client_id=query.vpn_client_id,
+            result=result,
         )
         text = render_admin_config_delivery_result(
             target_user_id=query.target_user_id,

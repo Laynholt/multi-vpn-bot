@@ -5,6 +5,7 @@ from __future__ import annotations
 import posixpath
 import re
 from dataclasses import dataclass
+from ipaddress import ip_network
 from typing import TYPE_CHECKING, Any, Literal, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -31,6 +32,8 @@ class WireGuardProviderSettings(BaseModel):
     wireguard_config_filepath: str | None = None
     client_config_dir: str | None = None
     allowed_username_pattern: str = r"a-zA-Z0-9_.@-"
+    allowed_public_key_pattern: str = r"a-zA-Z0-9+/=_.@-"
+    apply_strategy: Literal["wg_quick_save", "none"] = "wg_quick_save"
 
     @model_validator(mode="after")
     def validate_runtime_settings(self) -> Self:
@@ -135,6 +138,45 @@ class WireGuardProvider(BaseProvider):
                 return client
         return None
 
+    async def create_client(self, payload: dict[str, Any]) -> dict[str, Any]:
+        public_key = self._validate_public_key(str(payload["provider_client_id"]))
+        allowed_ips = self._validate_allowed_ips(str(payload["allowed_ips"]))
+        persistent_keepalive = payload.get("persistent_keepalive")
+
+        command: tuple[str, ...] = (
+            "set",
+            self.settings.wireguard_interface,
+            "peer",
+            public_key,
+            "allowed-ips",
+            allowed_ips,
+        )
+        if persistent_keepalive is not None:
+            command = (
+                *command,
+                "persistent-keepalive",
+                str(persistent_keepalive),
+            )
+
+        result = await self._run_wg(command)
+        if not result.ok:
+            raise RuntimeError(f"Failed to create WireGuard peer {public_key!r}")
+        await self._apply_config()
+
+        metadata = {
+            "allowed_ips": allowed_ips,
+            "persistent_keepalive": str(persistent_keepalive),
+            "public_key": public_key,
+        }
+        if persistent_keepalive is None:
+            metadata.pop("persistent_keepalive")
+        return {
+            "provider_client_id": public_key,
+            "display_name": str(payload.get("display_name") or allowed_ips),
+            "status": "active",
+            "metadata": metadata,
+        }
+
     async def export_client_config(self, client_id: str) -> bytes:
         safe_client_id = self._validate_client_file_id(client_id)
         config_path = posixpath.join(
@@ -159,6 +201,15 @@ class WireGuardProvider(BaseProvider):
             for peer in peers
         ]
 
+    async def delete_client(self, client_id: str) -> None:
+        public_key = self._validate_public_key(client_id)
+        result = await self._run_wg(
+            ("set", self.settings.wireguard_interface, "peer", public_key, "remove")
+        )
+        if not result.ok:
+            raise RuntimeError(f"Failed to delete WireGuard peer {public_key!r}")
+        await self._apply_config()
+
     async def _load_peer_dump(self) -> list[WireGuardPeerDump]:
         result = await self._run_wg(("show", self.settings.wireguard_interface, "dump"))
         if not result.ok:
@@ -172,6 +223,27 @@ class WireGuardProvider(BaseProvider):
                 ("docker", "exec", self.settings.docker_container_name, "wg", *args)
             )
         return await self._run(("wg", *args))
+
+    async def _run_wg_quick(self, args: tuple[str, ...]) -> CommandResult:
+        if self.settings.runtime == "docker":
+            assert self.settings.docker_container_name is not None
+            return await self._run(
+                (
+                    "docker",
+                    "exec",
+                    self.settings.docker_container_name,
+                    "wg-quick",
+                    *args,
+                )
+            )
+        return await self._run(("wg-quick", *args))
+
+    async def _apply_config(self) -> None:
+        if self.settings.apply_strategy == "none":
+            return
+        result = await self._run_wg_quick(("save", self.settings.wireguard_interface))
+        if not result.ok:
+            raise RuntimeError("Failed to persist WireGuard runtime configuration")
 
     async def _run(self, command: tuple[str, ...]) -> CommandResult:
         if self.executor is None:
@@ -202,6 +274,20 @@ class WireGuardProvider(BaseProvider):
         if not re.fullmatch(f"[{allowed}]+", client_id):
             raise ValueError(f"Unsafe WireGuard client config id: {client_id!r}")
         return client_id
+
+    def _validate_public_key(self, public_key: str) -> str:
+        allowed = self.settings.allowed_public_key_pattern
+        if not re.fullmatch(f"[{allowed}]+", public_key):
+            raise ValueError(f"Unsafe WireGuard public key: {public_key!r}")
+        return public_key
+
+    def _validate_allowed_ips(self, allowed_ips: str) -> str:
+        networks = [item.strip() for item in allowed_ips.split(",")]
+        if not networks or any(not item for item in networks):
+            raise ValueError("WireGuard allowed_ips must not be empty")
+        for network in networks:
+            ip_network(network, strict=False)
+        return ",".join(networks)
 
     @staticmethod
     def _none_if_empty(value: str) -> str | None:

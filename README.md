@@ -6,7 +6,7 @@
 
 - реализованы этапы 0-13 из `docs/IMPLEMENTATION_TASKS.md` в базовом виде;
 - этап 14 начат: добавлен executor-backed `WireGuardProvider` для healthcheck,
-  списка peers, peer stats и экспорта клиентского `.conf`;
+  списка peers, peer stats, экспорта клиентского `.conf`, создания и удаления peers;
 - собран базовый каркас проекта;
 - добавлены строгие pydantic-модели JSON-конфига;
 - добавлены базовое логирование и безопасный bootstrap;
@@ -62,6 +62,6 @@ python -m app.main --config configs/config.json
 
 ## Следующий шаг
 
-Следующий логичный блок — продолжение `WireGuard provider`: безопасное создание
-и удаление peers, изменение `wg0.conf`, применение конфигурации через Docker или
-systemd и синхронизация inventory после provider actions.
+Следующий логичный блок — продолжение `WireGuard provider`: генерация клиентских
+ключей и `.conf`, синхронизация inventory после provider actions и подключение
+этих действий к Telegram UI.

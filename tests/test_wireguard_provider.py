@@ -54,6 +54,14 @@ def _provider_config(settings: dict[str, object] | None = None) -> ProviderConfi
     )
 
 
+def test_wireguard_settings_validate_save_config_strategy() -> None:
+    settings = WireGuardProviderSettings.model_validate(
+        {"wireguard_interface": "wg0", "apply_strategy": "wg_quick_save"}
+    )
+
+    assert settings.apply_strategy == "wg_quick_save"
+
+
 def test_wireguard_settings_validate_docker_runtime_requires_container() -> None:
     with pytest.raises(ValidationError):
         WireGuardProviderSettings.model_validate(
@@ -186,3 +194,117 @@ def test_provider_factory_passes_executor_to_wireguard_provider() -> None:
 
     assert isinstance(provider, WireGuardProvider)
     assert provider.executor is executor
+
+
+@pytest.mark.asyncio
+async def test_wireguard_create_client_adds_peer_and_saves_systemd_config() -> None:
+    set_command = (
+        "wg",
+        "set",
+        "wg0",
+        "peer",
+        "pub1",
+        "allowed-ips",
+        "10.0.0.2/32",
+        "persistent-keepalive",
+        "25",
+    )
+    save_command = ("wg-quick", "save", "wg0")
+    executor = FakeExecutor(
+        {
+            set_command: _result(set_command),
+            save_command: _result(save_command),
+        }
+    )
+    provider = WireGuardProvider(_provider_config(), executor=executor)
+
+    client = await provider.create_client(
+        {
+            "provider_client_id": "pub1",
+            "allowed_ips": "10.0.0.2/32",
+            "persistent_keepalive": 25,
+        }
+    )
+
+    assert client == {
+        "provider_client_id": "pub1",
+        "display_name": "10.0.0.2/32",
+        "status": "active",
+        "metadata": {
+            "allowed_ips": "10.0.0.2/32",
+            "persistent_keepalive": "25",
+            "public_key": "pub1",
+        },
+    }
+    assert executor.commands == [set_command, save_command]
+
+
+@pytest.mark.asyncio
+async def test_wireguard_create_client_uses_docker_runtime_commands() -> None:
+    set_command = (
+        "docker",
+        "exec",
+        "wireguard",
+        "wg",
+        "set",
+        "wg0",
+        "peer",
+        "pub1",
+        "allowed-ips",
+        "10.0.0.2/32",
+    )
+    save_command = ("docker", "exec", "wireguard", "wg-quick", "save", "wg0")
+    executor = FakeExecutor(
+        {
+            set_command: _result(set_command),
+            save_command: _result(save_command),
+        }
+    )
+    provider = WireGuardProvider(
+        _provider_config(
+            {
+                "runtime": "docker",
+                "docker_container_name": "wireguard",
+            }
+        ),
+        executor=executor,
+    )
+
+    await provider.create_client(
+        {
+            "provider_client_id": "pub1",
+            "allowed_ips": "10.0.0.2/32",
+        }
+    )
+
+    assert executor.commands == [set_command, save_command]
+
+
+@pytest.mark.asyncio
+async def test_wireguard_delete_client_removes_peer_and_saves_config() -> None:
+    remove_command = ("wg", "set", "wg0", "peer", "pub1", "remove")
+    save_command = ("wg-quick", "save", "wg0")
+    executor = FakeExecutor(
+        {
+            remove_command: _result(remove_command),
+            save_command: _result(save_command),
+        }
+    )
+    provider = WireGuardProvider(_provider_config(), executor=executor)
+
+    await provider.delete_client("pub1")
+
+    assert executor.commands == [remove_command, save_command]
+
+
+@pytest.mark.asyncio
+async def test_wireguard_create_client_rejects_unsafe_public_key() -> None:
+    provider = WireGuardProvider(_provider_config(), executor=FakeExecutor({}))
+
+    with pytest.raises(ValueError):
+        await provider.create_client(
+            {
+                "provider_client_id": "pub 1",
+                "allowed_ips": "10.0.0.2/32",
+            }
+        )

@@ -23,6 +23,10 @@ def build_main_menu_keyboard(*, role: UserRole, has_servers: bool) -> InlineKeyb
         callback_data=MenuActionCallback(section=MenuSection.PROFILE).pack(),
     )
     builder.button(
+        text="Мои конфиги",
+        callback_data=MenuActionCallback(section=MenuSection.MY_CONFIGS).pack(),
+    )
+    builder.button(
         text="Мой Telegram ID",
         callback_data=MenuActionCallback(section=MenuSection.TELEGRAM_ID).pack(),
     )

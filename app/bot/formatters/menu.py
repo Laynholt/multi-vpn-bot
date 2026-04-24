@@ -7,6 +7,7 @@ from html import escape
 from app.bot.menu_sections import MenuSection
 from app.core.permissions import UserRole
 from app.core.registry import ServerRegistry
+from app.services.config_delivery import ConfigDeliveryResult
 
 
 def render_home_text(*, role: UserRole, registry: ServerRegistry) -> str:
@@ -95,3 +96,38 @@ def render_section_text(
         )
 
     return render_home_text(role=role, registry=registry)
+
+
+def render_user_configs_result(result: ConfigDeliveryResult) -> str:
+    if not result.files and not result.errors:
+        return "\n".join(
+            [
+                "Мои конфиги",
+                "",
+                "Привязанные VPN-клиенты не найдены.",
+            ]
+        )
+
+    lines = [
+        "Мои конфиги",
+        "",
+        f"Configs ready: {len(result.files)}",
+        f"Errors: {len(result.errors)}",
+    ]
+    if result.files:
+        lines.append("")
+        for item in result.files:
+            lines.append(
+                f"- {escape(item.display_name)} "
+                f"(<code>{escape(item.server_key)}</code>, "
+                f"<code>{escape(item.provider_type.value)}</code>)"
+            )
+    if result.errors:
+        lines.append("")
+        lines.append("Не удалось получить:")
+        for error in result.errors:
+            lines.append(
+                f"- {escape(error.display_name)} "
+                f"(<code>{escape(error.server_key)}</code>): {escape(error.message)}"
+            )
+    return "\n".join(lines)

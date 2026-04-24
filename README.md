@@ -20,6 +20,8 @@
   для просмотра серверов и запуска системных действий;
 - Telegram admin UI supports listing, syncing, creating, and confirmed deletion of
   clients inventory by enabled provider;
+- добавлен `ConfigDeliveryService` и пользовательская кнопка `Мои конфиги` для выдачи
+  привязанных provider configs как Telegram-файлов;
 - добавлены provider base layer, unified client inventory и traffic statistics layer
   с raw samples, delta calculation и daily aggregates.
 
@@ -54,6 +56,7 @@ python -m app.main --config configs/config.json
 - `app/services/host_actions`: запуск системных действий независимо от провайдеров;
 - `app/services/client_inventory`: единый реестр VPN-клиентов и связи с Telegram users;
 - `app/services/provider_clients`: синхронизация provider actions с client inventory;
+- `app/services/config_delivery`: выдача привязанных пользовательских VPN-конфигов;
 - `app/services/traffic_stats`: нормализация статистики, raw samples,
   delta calculation и дневные агрегаты;
 - `app/providers`: базовый provider contract, capabilities, factory, registry
@@ -68,5 +71,5 @@ python -m app.main --config configs/config.json
 
 ## Следующий шаг
 
-Next logical block: deliver generated provider configs to Telegram users and
-connect them to the existing client inventory/user binding layer.
+Следующий логичный блок — пользовательская статистика: агрегировать daily traffic
+по всем привязанным VPN-клиентам пользователя и показать её из inline-меню.

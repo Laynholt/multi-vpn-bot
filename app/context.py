@@ -13,6 +13,7 @@ from app.providers import ProviderFactory
 
 if TYPE_CHECKING:
     from app.infrastructure.db import DatabaseManager
+    from app.services.config_delivery import ConfigDeliveryService
     from app.services.host_actions import HostActionsService
     from app.services.messages import MessageBridgeService
     from app.services.provider_clients import ProviderClientSyncService
@@ -30,6 +31,7 @@ class ApplicationContext:
     provider_factory: ProviderFactory
     host_actions_service: HostActionsService
     provider_client_sync_service: ProviderClientSyncService
+    config_delivery_service: ConfigDeliveryService
     access_service: AccessService
     telegram_user_service: TelegramUserService
     message_bridge_service: MessageBridgeService

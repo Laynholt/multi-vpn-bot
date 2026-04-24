@@ -9,6 +9,8 @@ from app.bot.callbacks import (
     HostActionCallback,
     MenuActionCallback,
     MenuSection,
+    ProviderClientAction,
+    ProviderClientActionCallback,
     ServerSection,
     ServerSectionCallback,
     ServerSelectCallback,
@@ -16,6 +18,7 @@ from app.bot.callbacks import (
 from app.bot.formatters import (
     render_host_action_error,
     render_host_action_result,
+    render_provider_client_sync_result,
     render_server_card_text,
     render_server_info_text,
     render_server_list_text,
@@ -27,6 +30,7 @@ from app.bot.keyboards import (
     build_server_back_keyboard,
     build_server_card_keyboard,
     build_server_list_keyboard,
+    build_server_providers_keyboard,
     build_server_system_keyboard,
 )
 from app.context import ApplicationContext
@@ -96,7 +100,10 @@ async def open_server_section(
             if provider_config.enabled
         )
         text = render_server_providers_text(server, providers=providers)
-        reply_markup = build_server_back_keyboard(server_key=server.key)
+        reply_markup = build_server_providers_keyboard(
+            server_key=server.key,
+            providers=server.providers,
+        )
     else:
         text = render_server_info_text(server)
         reply_markup = build_server_back_keyboard(server_key=server.key)
@@ -127,6 +134,40 @@ async def run_host_action(
         text = render_host_action_error(
             server_key=callback_data.key,
             action_key=callback_data.action,
+            error=exc,
+        )
+
+    await send_or_edit_text(
+        event=callback,
+        text=text,
+        reply_markup=build_server_back_keyboard(server_key=callback_data.key),
+    )
+
+
+@router.callback_query(ProviderClientActionCallback.filter())
+async def sync_provider_clients(
+    callback: CallbackQuery,
+    callback_data: ProviderClientActionCallback,
+    app_context: ApplicationContext,
+    user_role: UserRole,
+) -> None:
+    if not await _ensure_admin(callback, user_role):
+        return
+
+    if callback_data.action != ProviderClientAction.SYNC:
+        await callback.answer("Неизвестное действие провайдера.", show_alert=True)
+        return
+
+    try:
+        result = await app_context.provider_client_sync_service.sync_provider_clients(
+            server_key=callback_data.key,
+            provider_type=callback_data.provider,
+        )
+        text = render_provider_client_sync_result(result)
+    except Exception as exc:
+        text = render_host_action_error(
+            server_key=callback_data.key,
+            action_key=f"{callback_data.provider.value}:{callback_data.action.value}",
             error=exc,
         )
 

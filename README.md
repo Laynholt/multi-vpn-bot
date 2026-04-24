@@ -18,6 +18,7 @@
   и пересылка сообщений администраторам;
 - добавлены `ServerRegistry`, executor layer, host actions и админский Telegram UI
   для просмотра серверов и запуска системных действий;
+- добавлена админская Telegram-кнопка синхронизации clients inventory по enabled-provider;
 - добавлены provider base layer, unified client inventory и traffic statistics layer
   с raw samples, delta calculation и daily aggregates.
 
@@ -66,5 +67,5 @@ python -m app.main --config configs/config.json
 
 ## Следующий шаг
 
-Следующий логичный блок — подключение provider client actions к Telegram UI:
+Следующий логичный блок — продолжение provider client actions в Telegram UI:
 создание/удаление WireGuard-клиентов через сервисный слой и выдача конфигов пользователям.

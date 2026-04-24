@@ -10,6 +10,7 @@ from app.bot.keyboards.servers import (
     build_server_back_keyboard,
     build_server_card_keyboard,
     build_server_list_keyboard,
+    build_server_providers_keyboard,
     build_server_system_keyboard,
 )
 
@@ -22,5 +23,6 @@ __all__ = [
     "build_server_back_keyboard",
     "build_server_card_keyboard",
     "build_server_list_keyboard",
+    "build_server_providers_keyboard",
     "build_server_system_keyboard",
 ]

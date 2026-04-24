@@ -1,17 +1,23 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 from app.bot.formatters import (
     render_host_action_result,
+    render_provider_client_sync_result,
     render_server_card_text,
     render_server_list_text,
     render_server_providers_text,
     render_server_system_text,
 )
-from app.core.config.models import AppConfig
+from app.core.config.models import AppConfig, ProviderType
 from app.core.executors import CommandResult
 from app.core.registry import ServerRegistry
+from app.domain.enums.common import ClientStatus
 from app.providers import ProviderFactory, ProviderRegistry
+from app.services.client_inventory import VpnClientSnapshot
 from app.services.host_actions import HostActionExecution, HostActionRegistry
+from app.services.provider_clients import ProviderClientSyncResult
 
 
 def _registry() -> ServerRegistry:
@@ -119,3 +125,33 @@ def test_render_host_action_result_truncates_long_output() -> None:
     assert "duration: 42 ms" in text
     assert "truncated" in text
     assert len(text) <= 180
+
+
+def test_render_provider_client_sync_result_summarizes_clients() -> None:
+    now = datetime(2026, 1, 1)
+    result = ProviderClientSyncResult(
+        server_key="srv-html",
+        provider_type=ProviderType.WIREGUARD,
+        clients=(
+            VpnClientSnapshot(
+                id=1,
+                provider_type=ProviderType.WIREGUARD,
+                server_key="srv-html",
+                provider_client_id="peer-1",
+                display_name="<Alice>",
+                status=ClientStatus.ACTIVE,
+                metadata={},
+                telegram_user_ids=(),
+                created_at=now,
+                updated_at=now,
+            ),
+        ),
+    )
+
+    text = render_provider_client_sync_result(result)
+
+    assert "Синхронизация клиентов" in text
+    assert "<code>srv-html</code>" in text
+    assert "wireguard" in text
+    assert "1 clients" in text
+    assert "&lt;Alice&gt;" in text

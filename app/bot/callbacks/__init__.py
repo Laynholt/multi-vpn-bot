@@ -4,6 +4,8 @@ from app.bot.callbacks.admin_users import AdminUserManageCallback, AdminUsersPag
 from app.bot.callbacks.menu import MenuActionCallback
 from app.bot.callbacks.servers import (
     HostActionCallback,
+    ProviderClientAction,
+    ProviderClientActionCallback,
     ServerSection,
     ServerSectionCallback,
     ServerSelectCallback,
@@ -16,6 +18,8 @@ __all__ = [
     "HostActionCallback",
     "MenuActionCallback",
     "MenuSection",
+    "ProviderClientAction",
+    "ProviderClientActionCallback",
     "ServerSection",
     "ServerSectionCallback",
     "ServerSelectCallback",

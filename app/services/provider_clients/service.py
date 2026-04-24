@@ -69,6 +69,21 @@ class ProviderClientSyncService:
 
         return tuple(results)
 
+    async def sync_provider_clients(
+        self,
+        *,
+        server_key: str,
+        provider_type: ProviderType,
+    ) -> ProviderClientSyncResult:
+        server = self._server_registry.get(server_key)
+        provider_config = self._get_enabled_provider_config(server, provider_type)
+        executor = self._executor_factory.for_server(server)
+        return await self._sync_provider_clients(
+            server=server,
+            provider_config=provider_config,
+            executor=executor,
+        )
+
     async def create_client(
         self,
         *,

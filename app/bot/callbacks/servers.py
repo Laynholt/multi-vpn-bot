@@ -6,6 +6,8 @@ from enum import StrEnum
 
 from aiogram.filters.callback_data import CallbackData
 
+from app.core.config.models import ProviderType
+
 
 class ServerSection(StrEnum):
     SYSTEM = "system"
@@ -25,3 +27,13 @@ class ServerSectionCallback(CallbackData, prefix="srvsec"):
 class HostActionCallback(CallbackData, prefix="hact"):
     key: str
     action: str
+
+
+class ProviderClientAction(StrEnum):
+    SYNC = "sync"
+
+
+class ProviderClientActionCallback(CallbackData, prefix="pcli"):
+    key: str
+    provider: ProviderType
+    action: ProviderClientAction

@@ -1,12 +1,20 @@
 from __future__ import annotations
 
-from app.bot.callbacks import HostActionCallback, ServerSection, ServerSectionCallback
+from app.bot.callbacks import (
+    HostActionCallback,
+    ProviderClientAction,
+    ProviderClientActionCallback,
+    ServerSection,
+    ServerSectionCallback,
+)
 from app.bot.keyboards import (
     build_server_card_keyboard,
     build_server_list_keyboard,
+    build_server_providers_keyboard,
     build_server_system_keyboard,
 )
 from app.core.config import load_config
+from app.core.config.models import ProviderConfig, ProviderType
 from app.core.registry import ServerRegistry
 from app.services.host_actions import HostActionRegistry
 
@@ -64,3 +72,25 @@ def test_build_server_system_keyboard_contains_host_action_callbacks() -> None:
 
     callbacks = {callback for _text, callback in _button_payloads(markup)}
     assert HostActionCallback(key="vps-nl", action="healthcheck").pack() in callbacks
+
+
+def test_build_server_providers_keyboard_contains_provider_sync_callbacks() -> None:
+    markup = build_server_providers_keyboard(
+        server_key="vps-nl",
+        providers=(
+            ProviderConfig(type=ProviderType.WIREGUARD),
+            ProviderConfig(type=ProviderType.X3UI, enabled=False),
+        ),
+    )
+
+    payloads = _button_payloads(markup)
+    callbacks = {callback for _text, callback in payloads}
+    assert (
+        ProviderClientActionCallback(
+            key="vps-nl",
+            provider=ProviderType.WIREGUARD,
+            action=ProviderClientAction.SYNC,
+        ).pack()
+        in callbacks
+    )
+    assert all("3xui" not in callback for _text, callback in payloads)

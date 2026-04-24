@@ -98,6 +98,26 @@ def _registry() -> ServerRegistry:
     )
 
 
+def _registry_with_two_enabled_providers() -> ServerRegistry:
+    return ServerRegistry(
+        {
+            "vps-nl": RegisteredServer(
+                key="vps-nl",
+                title="VPS NL",
+                connection=ConnectionConfig(mode=ConnectionMode.LOCAL),
+                host_actions=HostActionsConfig(),
+                providers=(
+                    ProviderConfig(type=ProviderType.WIREGUARD),
+                    ProviderConfig(type=ProviderType.X3UI),
+                ),
+                icon=None,
+                sort_order=0,
+                tags=(),
+            )
+        }
+    )
+
+
 @pytest.mark.asyncio
 async def test_sync_server_clients_persists_enabled_provider_clients(
     database: DatabaseManager,
@@ -139,6 +159,38 @@ async def test_sync_server_clients_persists_enabled_provider_clients(
     assert executor_factory.calls == ["vps-nl"]
     assert provider_factory.calls == [
         (ProviderConfig(type=ProviderType.WIREGUARD), executor_factory.executor)
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_provider_clients_syncs_only_selected_provider(
+    database: DatabaseManager,
+) -> None:
+    provider = FakeProvider(
+        [
+            {
+                "provider_client_id": "peer-1",
+                "display_name": "Alice Phone",
+            }
+        ]
+    )
+    provider_factory = FakeProviderFactory(provider)
+    service = ProviderClientSyncService(
+        server_registry=_registry_with_two_enabled_providers(),
+        executor_factory=FakeExecutorFactory(),
+        provider_factory=provider_factory,
+        client_inventory_service=ClientInventoryService(database),
+    )
+
+    result = await service.sync_provider_clients(
+        server_key="vps-nl",
+        provider_type=ProviderType.WIREGUARD,
+    )
+
+    assert result.provider_type == ProviderType.WIREGUARD
+    assert [client.provider_client_id for client in result.clients] == ["peer-1"]
+    assert [config.type for config, _executor in provider_factory.calls] == [
+        ProviderType.WIREGUARD
     ]
 
 

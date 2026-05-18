@@ -19,7 +19,6 @@ tmp_pytest_cache/
 configs/config.json
 
 # Project folders
-docs/
 stuff/
 
 # Other

@@ -33,6 +33,13 @@ class FakeCallback:
         self.answers.append((text, show_alert))
 
 
+class FakeConfigCallback(FakeCallback):
+    def __init__(self, bot: FakeBot) -> None:
+        super().__init__()
+        self.bot = bot
+        self.from_user = SimpleNamespace(id=500)
+
+
 class FakeMessage:
     def __init__(self, text: str) -> None:
         self.text = text
@@ -603,3 +610,74 @@ async def test_send_config_command_ignores_regular_user(
     assert bot.documents == []
     assert audit_service.calls == []
     assert sent == []
+
+
+@pytest.mark.asyncio
+async def test_send_config_callback_sends_user_configs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, object]] = []
+
+    async def fake_send_or_edit_text(**kwargs: object) -> None:
+        sent.append(kwargs)
+
+    monkeypatch.setattr(admin_users, "send_or_edit_text", fake_send_or_edit_text)
+    bot = FakeBot()
+    audit_service = FakeAdminAuditService(calls=[])
+    service = FakeConfigDeliveryService(
+        user_calls=[],
+        client_calls=[],
+        result=ConfigDeliveryResult(
+            files=(
+                ConfigDeliveryFile(
+                    filename="alice.conf",
+                    content=b"config",
+                    server_key="vps-nl",
+                    provider_type=ProviderType.WIREGUARD,
+                    provider_client_id="peer-1",
+                    display_name="Alice Phone",
+                ),
+            ),
+            errors=(),
+        ),
+    )
+
+    await admin_users.send_config_from_user_card(
+        FakeConfigCallback(bot),
+        SimpleNamespace(action="cfg", user_id=1001, page=0),
+        SimpleNamespace(config_delivery_service=service, admin_audit_service=audit_service),
+        UserRole.ADMIN,
+    )
+
+    assert service.user_calls == [1001]
+    assert bot.documents == [
+        {
+            "chat_id": 1001,
+            "filename": "alice.conf",
+            "caption": "VPN config: Alice Phone",
+        }
+    ]
+    assert audit_service.calls[0]["target_telegram_user_id"] == 1001
+    assert "Отправлено: 1" in sent[0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_send_config_callback_rejects_regular_user() -> None:
+    callback = FakeConfigCallback(FakeBot())
+
+    await admin_users.send_config_from_user_card(
+        callback,
+        SimpleNamespace(action="cfg", user_id=1001, page=0),
+        SimpleNamespace(
+            config_delivery_service=FakeConfigDeliveryService(
+                user_calls=[],
+                client_calls=[],
+                result=ConfigDeliveryResult(files=(), errors=()),
+            ),
+            admin_audit_service=FakeAdminAuditService(calls=[]),
+        ),
+        UserRole.USER,
+    )
+
+    assert callback.answers == [("Недостаточно прав.", True)]
+    assert callback.bot.documents == []

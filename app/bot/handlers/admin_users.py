@@ -67,6 +67,10 @@ def _admin_user_id(message: Message) -> int | None:
     return message.from_user.id if message.from_user is not None else None
 
 
+def _admin_callback_user_id(callback: CallbackQuery) -> int | None:
+    return callback.from_user.id if callback.from_user is not None else None
+
+
 async def _ensure_admin(callback: CallbackQuery, user_role: UserRole) -> bool:
     if user_role == UserRole.ADMIN:
         return True
@@ -245,6 +249,39 @@ def _should_archive_config_delivery(
     return len(result.files) > 1
 
 
+async def _deliver_admin_config_files(
+    *,
+    bot: Bot,
+    app_context: ApplicationContext,
+    query: AdminConfigDeliveryQuery,
+    admin_telegram_user_id: int,
+) -> ConfigDeliveryResult:
+    result = await _load_admin_config_delivery_result(app_context=app_context, query=query)
+    if _should_archive_config_delivery(query=query, result=result):
+        archive = app_context.config_delivery_service.build_config_archive(
+            target_user_id=query.target_user_id,
+            files=result.files,
+        )
+        await _send_config_delivery_archive(
+            bot=bot,
+            target_user_id=query.target_user_id,
+            archive=archive,
+        )
+    else:
+        await _send_config_delivery_files(
+            bot=bot,
+            target_user_id=query.target_user_id,
+            files=result.files,
+        )
+    await app_context.admin_audit_service.record_config_delivery(
+        admin_telegram_user_id=admin_telegram_user_id,
+        target_telegram_user_id=query.target_user_id,
+        vpn_client_id=query.vpn_client_id,
+        result=result,
+    )
+    return result
+
+
 @router.callback_query(MenuActionCallback.filter(F.section == MenuSection.ADMIN))
 async def admin_home(
     callback: CallbackQuery,
@@ -365,28 +402,11 @@ async def send_config_command(
         admin_telegram_user_id = _admin_user_id(message)
         if admin_telegram_user_id is None:
             raise RuntimeError("Admin Telegram user is unavailable")
-        result = await _load_admin_config_delivery_result(app_context=app_context, query=query)
-        if _should_archive_config_delivery(query=query, result=result):
-            archive = app_context.config_delivery_service.build_config_archive(
-                target_user_id=query.target_user_id,
-                files=result.files,
-            )
-            await _send_config_delivery_archive(
-                bot=message.bot,
-                target_user_id=query.target_user_id,
-                archive=archive,
-            )
-        else:
-            await _send_config_delivery_files(
-                bot=message.bot,
-                target_user_id=query.target_user_id,
-                files=result.files,
-            )
-        await app_context.admin_audit_service.record_config_delivery(
+        result = await _deliver_admin_config_files(
+            bot=message.bot,
+            app_context=app_context,
+            query=query,
             admin_telegram_user_id=admin_telegram_user_id,
-            target_telegram_user_id=query.target_user_id,
-            vpn_client_id=query.vpn_client_id,
-            result=result,
         )
         text = render_admin_config_delivery_result(
             target_user_id=query.target_user_id,
@@ -396,6 +416,39 @@ async def send_config_command(
         text = f"Не удалось выдать конфиги: {exc}"
 
     await send_or_edit_text(event=message, text=text)
+
+
+@router.callback_query(AdminUserManageCallback.filter(F.action == AdminUserAction.SEND_CONFIGS))
+async def send_config_from_user_card(
+    callback: CallbackQuery,
+    callback_data: AdminUserManageCallback,
+    app_context: ApplicationContext,
+    user_role: UserRole,
+) -> None:
+    if not await _ensure_admin(callback, user_role):
+        return
+
+    query = AdminConfigDeliveryQuery(target_user_id=callback_data.user_id)
+    try:
+        if callback.bot is None:
+            raise RuntimeError("Telegram bot is unavailable")
+        admin_telegram_user_id = _admin_callback_user_id(callback)
+        if admin_telegram_user_id is None:
+            raise RuntimeError("Admin Telegram user is unavailable")
+        result = await _deliver_admin_config_files(
+            bot=callback.bot,
+            app_context=app_context,
+            query=query,
+            admin_telegram_user_id=admin_telegram_user_id,
+        )
+        text = render_admin_config_delivery_result(
+            target_user_id=query.target_user_id,
+            result=result,
+        )
+    except Exception as exc:
+        text = f"Не удалось выдать конфиги: {exc}"
+
+    await send_or_edit_text(event=callback, text=text)
 
 
 @router.callback_query(AdminUsersPageCallback.filter())

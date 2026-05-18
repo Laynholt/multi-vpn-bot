@@ -127,6 +127,15 @@ def build_admin_user_card_keyboard(
 ) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
+    builder.button(
+        text="Выдать конфиги",
+        callback_data=AdminUserManageCallback(
+            action=AdminUserAction.SEND_CONFIGS,
+            user_id=user.telegram_user_id,
+            page=page,
+        ).pack(),
+    )
+
     if user.status.value == "banned":
         builder.button(
             text="Разбанить",
@@ -164,5 +173,5 @@ def build_admin_user_card_keyboard(
         text="Домой",
         callback_data=MenuActionCallback(section=MenuSection.HOME).pack(),
     )
-    builder.adjust(2, 2)
+    builder.adjust(1, 2, 2)
     return builder.as_markup()
